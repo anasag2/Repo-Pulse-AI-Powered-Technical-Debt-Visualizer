@@ -1,0 +1,78 @@
+############################
+# OS / Editor junk
+############################
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+############################
+# Python
+############################
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv
+venv/
+ENV/
+pip-wheel-metadata/
+
+############################
+# Jupyter
+############################
+.ipynb_checkpoints/
+
+############################
+# Logs & runtime files
+############################
+logs/
+*.log
+*.pid
+
+############################
+# Data & vulnerability feeds
+############################
+data/
+datasets/
+raw_data/
+downloads/
+intel_data/
+vuln_data/
+
+############################
+# Archives
+############################
+*.zip
+*.tar
+*.gz
+*.7z
+
+############################
+# ML artifacts
+############################
+models/
+checkpoints/
+*.pt
+*.pth
+*.h5
+*.onnx
+
+############################
+# Temporary / generated outputs
+############################
+outputs/
+reports/
+tmp/
+cache/
+
+############################
+# Secrets (never commit)
+############################
+*.key
+*.pem
+*.env
+secrets/
+config/local.yaml
+config/local.json
