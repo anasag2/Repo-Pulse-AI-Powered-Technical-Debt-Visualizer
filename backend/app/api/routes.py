@@ -4,6 +4,7 @@ from app.schemas.repo_request import RepoRequest
 from app.services.repo_validator import validate_local_repository
 from app.services.repo_ingestion import clone_remote_repository
 from app.services.git_mining import get_tracked_files
+from app.services.git_mining import get_basic_repository_metrics
 
 router = APIRouter()
 
@@ -22,19 +23,19 @@ def analyze_repo(request: RepoRequest):
                 status_code=400,
                 detail=message
             )
-        success, message, tracked_files = get_tracked_files(request.path)
+        success, mining_message, metrics = get_basic_repository_metrics(request.path)
         if not success:
             raise HTTPException(
                 status_code=400,
-                detail=message
+                detail=mining_message
             )
         return{
             "status": "validated",
             "input_type": "local",
             "path": request.path,
             "message": message,
-            "file_count": len(tracked_files),
-            "tracked_files": files[:10] # Return first 10 tracked files as a sample
+            "file_count": len(metrics),
+            "tracked_files": metrics[:20] # Return first 20 tracked files as a sample
         }
     if request.input_type == "remote":
         if not request.url:
@@ -48,7 +49,7 @@ def analyze_repo(request: RepoRequest):
                 status_code=400,
                 detail=message
             )
-        success, mining_message, files = get_tracked_files(local_path)
+        success, mining_message, metrics = get_basic_repository_metrics(local_path)
 
         if not success:
             raise HTTPException(
@@ -61,8 +62,8 @@ def analyze_repo(request: RepoRequest):
             "url": request.url,
             "local_path": local_path,
             "message": message,
-            "file_count": len(files),
-            "tracked_files": files[:10] # Return first 10 tracked files as a sample
+            "file_count": len(metrics),
+            "tracked_files": metrics[:20] # Return first 20 tracked files as a sample
         }
     raise HTTPException(
         status_code=400,

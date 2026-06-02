@@ -29,7 +29,7 @@ def clone_remote_repository(url: str) -> tuple[bool, str, Optional[str]]:
                 "git",
                 "clone",
                 "--depth",
-                "100",
+                "1000",
                 url,
                 str(target_path)
             ],
