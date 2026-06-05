@@ -1,0 +1,419 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Repo-Pulse API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: repositories
+    description: Repository operations
+  - name: files
+    description: File analysis operations
+  - name: dashboard
+    description: Dashboard operations
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /repositories:
+    get:
+      operationId: listRepositories
+      tags: [repositories]
+      summary: List all repositories
+      responses:
+        "200":
+          description: List of repositories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Repository"
+    post:
+      operationId: analyzeRepository
+      tags: [repositories]
+      summary: Analyze a new repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepositoryInput"
+      responses:
+        "201":
+          description: Repository analyzed and created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+
+  /repositories/{id}:
+    get:
+      operationId: getRepository
+      tags: [repositories]
+      summary: Get repository details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Repository details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteRepository
+      tags: [repositories]
+      summary: Delete a repository
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /repositories/{id}/files:
+    get:
+      operationId: listFiles
+      tags: [files]
+      summary: List all file nodes for 3D visualization
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: File nodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FileNode"
+
+  /repositories/{id}/files/{fileId}:
+    get:
+      operationId: getFile
+      tags: [files]
+      summary: Get file details with risk factors and recent commits
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: File detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /repositories/{id}/commits:
+    get:
+      operationId: listCommits
+      tags: [repositories]
+      summary: Get recent commits for a repository
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recent commits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Commit"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary statistics
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Repository:
+      type: object
+      required:
+        - id
+        - name
+        - url
+        - isPublic
+        - lastAnalyzed
+        - totalFiles
+        - linesOfCode
+        - riskyFiles
+        - riskyFilesPercent
+        - authors
+        - lastCommit
+        - avgRiskScore
+        - testCoverage
+        - technicalDebt
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        url:
+          type: string
+        isPublic:
+          type: boolean
+        lastAnalyzed:
+          type: string
+        totalFiles:
+          type: integer
+        linesOfCode:
+          type: integer
+        riskyFiles:
+          type: integer
+        riskyFilesPercent:
+          type: number
+        authors:
+          type: integer
+        lastCommit:
+          type: string
+        avgRiskScore:
+          type: number
+        testCoverage:
+          type: integer
+        technicalDebt:
+          type: string
+
+    RepositoryInput:
+      type: object
+      required:
+        - name
+        - url
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+        isPublic:
+          type: boolean
+
+    FileNode:
+      type: object
+      required:
+        - id
+        - repoId
+        - name
+        - path
+        - parentPath
+        - isDirectory
+        - riskScore
+        - churnCommits
+        - linesOfCode
+        - complexity
+        - testCoverage
+        - authors
+      properties:
+        id:
+          type: integer
+        repoId:
+          type: integer
+        name:
+          type: string
+        path:
+          type: string
+        parentPath:
+          type: string
+        isDirectory:
+          type: boolean
+        riskScore:
+          type: number
+        churnCommits:
+          type: integer
+        linesOfCode:
+          type: integer
+        complexity:
+          type: integer
+        testCoverage:
+          type: integer
+        authors:
+          type: integer
+
+    RiskFactor:
+      type: object
+      required:
+        - name
+        - score
+      properties:
+        name:
+          type: string
+        score:
+          type: number
+
+    FileDetail:
+      type: object
+      required:
+        - id
+        - repoId
+        - name
+        - path
+        - parentPath
+        - isDirectory
+        - riskScore
+        - churnCommits
+        - linesOfCode
+        - complexity
+        - testCoverage
+        - authors
+        - riskFactors
+        - recentCommits
+      properties:
+        id:
+          type: integer
+        repoId:
+          type: integer
+        name:
+          type: string
+        path:
+          type: string
+        parentPath:
+          type: string
+        isDirectory:
+          type: boolean
+        riskScore:
+          type: number
+        churnCommits:
+          type: integer
+        linesOfCode:
+          type: integer
+        complexity:
+          type: integer
+        testCoverage:
+          type: integer
+        authors:
+          type: integer
+        riskFactors:
+          type: array
+          items:
+            $ref: "#/components/schemas/RiskFactor"
+        recentCommits:
+          type: array
+          items:
+            $ref: "#/components/schemas/Commit"
+
+    Commit:
+      type: object
+      required:
+        - id
+        - repoId
+        - message
+        - author
+        - authorInitials
+        - timeAgo
+        - hash
+      properties:
+        id:
+          type: integer
+        repoId:
+          type: integer
+        message:
+          type: string
+        author:
+          type: string
+        authorInitials:
+          type: string
+        timeAgo:
+          type: string
+        hash:
+          type: string
+
+    DashboardSummary:
+      type: object
+      required:
+        - totalRepositories
+        - totalFiles
+        - totalHighRiskFiles
+        - avgRiskScore
+        - avgTestCoverage
+        - recentlyAnalyzed
+      properties:
+        totalRepositories:
+          type: integer
+        totalFiles:
+          type: integer
+        totalHighRiskFiles:
+          type: integer
+        avgRiskScore:
+          type: number
+        avgTestCoverage:
+          type: integer
+        recentlyAnalyzed:
+          type: array
+          items:
+            $ref: "#/components/schemas/Repository"

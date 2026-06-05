@@ -66,6 +66,7 @@ outputs/
 reports/
 tmp/
 cache/
+.coverage
 
 ############################
 # Secrets (never commit)
