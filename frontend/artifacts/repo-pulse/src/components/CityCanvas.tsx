@@ -4,15 +4,34 @@ import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import type { FileNode } from "@workspace/api-client-react";
 
-function riskToHex(score: number): string {
-  if (score < 0.3) return "#22c55e";
-  if (score < 0.5) return "#eab308";
-  if (score < 0.7) return "#f97316";
+export type ColorMode = "risk" | "churn" | "complexity" | "coverage";
+
+function scaleToHex(t: number): string {
+  // t in [0,1]: green → yellow → orange → red
+  if (t < 0.3) return "#22c55e";
+  if (t < 0.5) return "#eab308";
+  if (t < 0.7) return "#f97316";
   return "#ef4444";
+}
+
+// Map a file to a color based on the active "Color by" metric.
+export function metricHex(file: FileNode, mode: ColorMode): string {
+  switch (mode) {
+    case "churn":
+      return scaleToHex(Math.min(1, file.churnCommits / 100));
+    case "complexity":
+      return scaleToHex(Math.min(1, file.complexity / 30));
+    case "coverage":
+      return scaleToHex(1 - file.testCoverage / 100); // low coverage = red
+    case "risk":
+    default:
+      return scaleToHex(file.riskScore);
+  }
 }
 
 function Building({
   file,
+  colorBy,
   position,
   selected,
   hovered,
@@ -21,6 +40,7 @@ function Building({
   onClick,
 }: {
   file: FileNode;
+  colorBy: ColorMode;
   position: [number, number, number];
   selected: boolean;
   hovered: boolean;
@@ -29,7 +49,7 @@ function Building({
   onClick: () => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const color = riskToHex(file.riskScore);
+  const color = metricHex(file, colorBy);
   const height = Math.max(0.3, (file.churnCommits / 100) * 4);
   const baseSize = Math.max(0.3, (file.linesOfCode / 800) * 0.8);
 
@@ -58,6 +78,7 @@ function Building({
 function District({
   dir,
   buildings,
+  colorBy,
   offsetX,
   offsetZ,
   onBuildingClick,
@@ -65,6 +86,7 @@ function District({
 }: {
   dir: string;
   buildings: FileNode[];
+  colorBy: ColorMode;
   offsetX: number;
   offsetZ: number;
   onBuildingClick: (f: FileNode) => void;
@@ -96,6 +118,7 @@ function District({
           <Building
             key={file.id}
             file={file}
+            colorBy={colorBy}
             position={[bx, 0, bz]}
             selected={selectedId === file.id}
             hovered={hoveredId === file.id}
@@ -113,10 +136,12 @@ export default function CityCanvas({
   files,
   onFileClick,
   selectedId,
+  colorBy = "risk",
 }: {
   files: FileNode[];
   onFileClick: (f: FileNode) => void;
   selectedId: number | null;
+  colorBy?: ColorMode;
 }) {
   const filesByDir = useMemo(() => {
     const map: Record<string, FileNode[]> = {};
@@ -160,6 +185,7 @@ export default function CityCanvas({
           key={dir}
           dir={dir}
           buildings={buildings}
+          colorBy={colorBy}
           offsetX={positions[i][0]}
           offsetZ={positions[i][1]}
           onBuildingClick={onFileClick}
