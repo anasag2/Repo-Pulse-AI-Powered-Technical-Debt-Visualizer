@@ -18,6 +18,7 @@ class RepoStore:
         self._files: Dict[int, List[Dict]] = {}          # repoId -> [FileNode]
         self._file_extras: Dict[int, Dict[int, Dict]] = {}  # repoId -> fileId -> extras
         self._commits: Dict[int, List[Dict]] = {}        # repoId -> [Commit]
+        self._coupling: Dict[int, List[Dict]] = {}       # repoId -> [CouplingPair]
         self._repo_paths: Dict[int, str] = {}            # repoId -> local clone path
         self._next_repo_id = 1
         self._next_file_id = 1
@@ -47,6 +48,7 @@ class RepoStore:
             self._files[repo_id] = files
             self._file_extras[repo_id] = payload["file_extras"]
             self._commits[repo_id] = payload["commits"]
+            self._coupling[repo_id] = payload.get("coupling", [])
             if files:
                 self._next_file_id = max(f["id"] for f in files) + 1
             commits = payload["commits"]
@@ -62,6 +64,7 @@ class RepoStore:
             self._files.pop(repo_id, None)
             self._file_extras.pop(repo_id, None)
             self._commits.pop(repo_id, None)
+            self._coupling.pop(repo_id, None)
             return self._repo_paths.pop(repo_id, None)
 
     # -- reads -------------------------------------------------------------
@@ -83,6 +86,12 @@ class RepoStore:
 
     def list_commits(self, repo_id: int) -> Optional[List[Dict]]:
         return self._commits.get(repo_id)
+
+    def list_coupling(self, repo_id: int) -> Optional[List[Dict]]:
+        return self._coupling.get(repo_id)
+
+    def get_repo_path(self, repo_id: int) -> Optional[str]:
+        return self._repo_paths.get(repo_id)
 
 
 store = RepoStore()

@@ -15,11 +15,25 @@ import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { FileNode } from "@workspace/api-client-react";
 
-export type ColorMode = "risk" | "churn" | "complexity" | "coverage";
+export type ColorMode = "risk" | "hotspot" | "churn" | "complexity" | "coverage";
+
+// Extended metrics the backend now returns but that aren't in the generated
+// FileNode type yet. Accessed defensively so older payloads still render.
+type ExtMetrics = {
+  hotspotScore: number;
+  bugCommits: number;
+  ageDays: number;
+  todoMarkers: number;
+  functionCount: number;
+};
+export function ext(file: FileNode): Partial<ExtMetrics> {
+  return file as FileNode & Partial<ExtMetrics>;
+}
 
 // Normalized metric value in [0,1] for the active "Color by" mode.
 function metricT(file: FileNode, mode: ColorMode): number {
   switch (mode) {
+    case "hotspot": return Math.min(1, ext(file).hotspotScore ?? 0);
     case "churn": return Math.min(1, file.churnCommits / 100);
     case "complexity": return Math.min(1, file.complexity / 30);
     case "coverage": return 1 - file.testCoverage / 100; // low coverage = hot

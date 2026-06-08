@@ -14,7 +14,11 @@ import os
 from datetime import datetime
 from typing import Dict, List, Tuple
 
-from app.services.git_mining import get_basic_repository_metrics, get_recent_commits
+from app.services.git_mining import (
+    get_basic_repository_metrics,
+    get_recent_commits,
+    get_temporal_coupling,
+)
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -38,11 +42,6 @@ def _risk_score(churn: int, loc: int, authors: int,
     norm_authors = authors / max_authors if max_authors else 0
     score = 0.5 * norm_churn + 0.3 * norm_loc + 0.2 * norm_authors
     return round(_clamp(score), 2)
-
-
-def _estimate_complexity(loc: int) -> int:
-    """Heuristic: ~1 unit of cyclomatic-ish complexity per dozen lines."""
-    return max(1, min(60, round(loc / 12)))
 
 
 def _estimate_coverage(risk_score: float, path: str) -> int:
@@ -108,6 +107,7 @@ def build_repository_analysis(
     # ---- Per-file metrics + normalization --------------------------------
     max_churn = max((m.get("churn", 0) for m in metrics), default=0)
     max_loc = max((m.get("loc", 0) for m in metrics), default=0)
+    max_complexity = max((m.get("complexity_max", 0) for m in metrics), default=0)
     max_authors = max(
         (m.get("ownership", {}).get("contributors_count", 0) for m in metrics),
         default=0,
@@ -116,19 +116,30 @@ def build_repository_analysis(
     files: List[Dict] = []
     file_extras: Dict[int, Dict] = {}
     all_authors = set()
+    path_to_id: Dict[str, int] = {}
 
     fid = next_file_id
     for m in metrics:
         path = m["path"]
         loc = m.get("loc", 0)
         churn = m.get("churn", 0)
+        complexity = m.get("complexity_max", 0)
+        bug_commits = m.get("bug_commits", 0)
+        age_days = m.get("last_age_days", 0)
+        todo_markers = m.get("todo_markers", 0)
+        function_count = m.get("function_count", 0)
         ownership = m.get("ownership", {})
         authors = ownership.get("contributors_count", 0)
         all_authors.update((ownership.get("contributors") or {}).keys())
 
         risk = _risk_score(churn, loc, authors, max_churn, max_loc, max_authors)
         coverage = _estimate_coverage(risk, path)
-        complexity = _estimate_complexity(loc)
+
+        # Hotspot: the canonical debt signal — code that is both complex AND
+        # changes a lot. Normalized complexity x normalized churn, in [0,1].
+        norm_complexity = complexity / max_complexity if max_complexity else 0
+        norm_churn = churn / max_churn if max_churn else 0
+        hotspot = round(norm_complexity * norm_churn, 2)
 
         node = {
             "id": fid,
@@ -143,16 +154,26 @@ def build_repository_analysis(
             "complexity": complexity,
             "testCoverage": coverage,
             "authors": authors,
+            "hotspotScore": hotspot,
+            "bugCommits": bug_commits,
+            "ageDays": age_days,
+            "todoMarkers": todo_markers,
+            "functionCount": function_count,
         }
         files.append(node)
+        path_to_id[path] = fid
 
         risk_factors = [
             {"name": "High Churn",
-             "score": round(0.5 * (churn / max_churn if max_churn else 0), 2)},
+             "score": round(0.5 * norm_churn, 2)},
+            {"name": "High Complexity",
+             "score": round(0.4 * norm_complexity, 2)},
             {"name": "Large File Size",
              "score": round(0.3 * (loc / max_loc if max_loc else 0), 2)},
             {"name": "Many Authors",
              "score": round(0.2 * (authors / max_authors if max_authors else 0), 2)},
+            {"name": "Recent Bug Fixes",
+             "score": round(min(1.0, bug_commits / 8) * 0.3, 2)},
             {"name": "Low Test Coverage",
              "score": round((100 - coverage) / 100 * 0.3, 2)},
         ]
@@ -176,6 +197,7 @@ def build_repository_analysis(
             continue
         avg_risk = round(sum(c["riskScore"] for c in children) / len(children), 2)
         avg_cov = round(sum(c["testCoverage"] for c in children) / len(children))
+        avg_hotspot = round(sum(c["hotspotScore"] for c in children) / len(children), 2)
         dir_node = {
             "id": fid,
             "repoId": repo_id,
@@ -186,9 +208,14 @@ def build_repository_analysis(
             "riskScore": avg_risk,
             "churnCommits": sum(c["churnCommits"] for c in children),
             "linesOfCode": sum(c["linesOfCode"] for c in children),
-            "complexity": 0,
+            "complexity": max((c["complexity"] for c in children), default=0),
             "testCoverage": avg_cov,
             "authors": len({c["authors"] for c in children}),
+            "hotspotScore": avg_hotspot,
+            "bugCommits": sum(c["bugCommits"] for c in children),
+            "ageDays": min((c["ageDays"] for c in children), default=0),
+            "todoMarkers": sum(c["todoMarkers"] for c in children),
+            "functionCount": sum(c["functionCount"] for c in children),
         }
         files.append(dir_node)
         file_extras[fid] = {"riskFactors": [], "recentCommits": recent_commits}
@@ -224,9 +251,29 @@ def build_repository_analysis(
         "technicalDebt": _format_technical_debt(risky_files, avg_risk),
     }
 
+    # ---- Temporal coupling (file pairs that change together) --------------
+    _, _, raw_coupling = get_temporal_coupling(repo_path)
+    coupling: List[Dict] = []
+    for pair in raw_coupling:
+        a_id = path_to_id.get(pair["fileA"])
+        b_id = path_to_id.get(pair["fileB"])
+        if a_id is None or b_id is None:
+            continue
+        coupling.append({
+            "fileAId": a_id,
+            "fileBId": b_id,
+            "fileA": os.path.basename(pair["fileA"]),
+            "fileB": os.path.basename(pair["fileB"]),
+            "pathA": pair["fileA"],
+            "pathB": pair["fileB"],
+            "coChanges": pair["coChanges"],
+            "degree": pair["degree"],
+        })
+
     return True, "Repository analyzed successfully.", {
         "repository": repository,
         "files": files,
         "file_extras": file_extras,
         "commits": commits,
+        "coupling": coupling,
     }

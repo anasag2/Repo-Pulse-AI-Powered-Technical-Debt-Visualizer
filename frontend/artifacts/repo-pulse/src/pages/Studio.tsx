@@ -13,7 +13,7 @@ import type { FileNode, Repository } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import {
   X, Star, GitCommit, FileText, Users, Layers, TestTube,
-  RefreshCw, AlertTriangle, Box, Shield, Database, ChevronRight,
+  RefreshCw, AlertTriangle, Box, Shield, Database, ChevronRight, ExternalLink,
 } from "lucide-react";
 
 // ─── Color helpers ─────────────────────────────────────────────────────────
@@ -37,6 +37,12 @@ function riskText(score: number) {
   if (score < 0.5) return "text-yellow-400";
   if (score < 0.7) return "text-orange-400";
   return "text-red-400";
+}
+
+// Best-effort GitHub blob URL for a file path within the repo.
+function blobUrl(repoUrl: string, path: string): string {
+  const base = repoUrl.replace(/\/$/, "").replace(/^(?!https?:\/\/)/, "https://").replace(/\.git$/, "");
+  return `${base}/blob/HEAD/${path}`;
 }
 
 function riskBadge(score: number) {
@@ -157,6 +163,9 @@ function FilePanel({ repoId, fileId, onClose }: { repoId: number; fileId: number
   const [tab, setTab] = useState<"overview" | "history" | "contributors">("overview");
   const { data: file, isLoading } = useGetFile(repoId, fileId, {
     query: { queryKey: getGetFileQueryKey(repoId, fileId) },
+  });
+  const { data: repo } = useGetRepository(repoId, {
+    query: { queryKey: getGetRepositoryQueryKey(repoId) },
   });
 
   if (isLoading) return (
@@ -294,6 +303,20 @@ function FilePanel({ repoId, fileId, onClose }: { repoId: number; fileId: number
           </div>
         )}
       </div>
+
+      {repo && (
+        <div className="px-3 py-2.5 border-t border-border shrink-0">
+          <a
+            href={blobUrl(repo.url, file.path)}
+            target="_blank"
+            rel="noreferrer"
+            className="w-full flex items-center justify-center gap-1.5 h-9 rounded-md bg-emerald-500 text-white text-xs font-semibold hover:bg-emerald-400 transition-colors"
+            data-testid="button-view-file-repo"
+          >
+            View File in Repository <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
+      )}
     </div>
   );
 }
@@ -301,7 +324,7 @@ function FilePanel({ repoId, fileId, onClose }: { repoId: number; fileId: number
 // ─── Stat chip ───────────────────────────────────────────────────────────────
 
 function Stat({ icon: Icon, label, value, cls }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string | number;
   cls?: string;

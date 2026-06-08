@@ -13,7 +13,11 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Response, status
 
 from app.schemas.api_models import (
+    AIFileInsight,
+    AIReport,
+    AIStatus,
     Commit,
+    CouplingPair,
     DashboardSummary,
     FileDetail,
     FileNode,
@@ -21,6 +25,7 @@ from app.schemas.api_models import (
     Repository,
     RepositoryInput,
 )
+from app.services import ai_analysis
 from app.services.analysis import build_repository_analysis
 from app.services.repo_ingestion import clone_remote_repository
 from app.store import store
@@ -117,6 +122,75 @@ def list_commits(repo_id: int):
     if commits is None:
         raise HTTPException(status_code=404, detail="Repository not found")
     return commits[:20]
+
+
+@router.get("/repositories/{repo_id}/coupling", response_model=List[CouplingPair])
+def list_coupling(repo_id: int):
+    coupling = store.list_coupling(repo_id)
+    if coupling is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return coupling
+
+
+@router.get("/ai/status", response_model=AIStatus)
+def ai_status():
+    return {"enabled": ai_analysis.ai_available(), "model": ai_analysis._MODEL}
+
+
+def _require_ai():
+    if not ai_analysis.ai_available():
+        raise HTTPException(
+            status_code=503,
+            detail="AI features are disabled. Set ANTHROPIC_API_KEY in the backend "
+                   "environment to enable Claude-powered analysis.",
+        )
+
+
+@router.post(
+    "/repositories/{repo_id}/files/{file_id}/ai-insight",
+    response_model=AIFileInsight,
+)
+def ai_file_insight(repo_id: int, file_id: int):
+    _require_ai()
+    detail = store.get_file(repo_id, file_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        insight = ai_analysis.analyze_file(
+            repo_path=store.get_repo_path(repo_id),
+            file_node=detail,
+            risk_factors=detail.get("riskFactors", []),
+        )
+    except Exception as exc:  # API/auth/network errors from the model call
+        raise HTTPException(status_code=502, detail=f"AI analysis failed: {exc}")
+
+    return {
+        "summary": insight.summary,
+        "severity": insight.severity,
+        "debtDrivers": insight.debt_drivers,
+        "refactorSteps": insight.refactor_steps,
+        "estimatedEffort": insight.estimated_effort,
+    }
+
+
+@router.post("/repositories/{repo_id}/ai-report", response_model=AIReport)
+def ai_repo_report(repo_id: int):
+    _require_ai()
+    repo = store.get_repository(repo_id)
+    if repo is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    files = [f for f in (store.list_files(repo_id) or []) if not f["isDirectory"]]
+    top_files = sorted(files, key=lambda f: f.get("hotspotScore", 0), reverse=True)[:8]
+    coupling = store.list_coupling(repo_id) or []
+
+    try:
+        markdown = ai_analysis.repo_report(repo, top_files, coupling)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI report failed: {exc}")
+
+    return {"markdown": markdown, "model": ai_analysis._MODEL}
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)

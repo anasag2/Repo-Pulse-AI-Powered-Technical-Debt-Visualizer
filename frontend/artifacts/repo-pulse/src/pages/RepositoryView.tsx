@@ -31,6 +31,7 @@ import {
   ChevronRight,
   Gauge,
   ExternalLink,
+  Sparkles,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -44,10 +45,25 @@ function riskToHex(score: number): string {
   return "#ef4444";
 }
 
+// Extended metrics the backend returns but that aren't in the generated FileNode
+// type yet (mirrors CityCanvas.ext; duplicated to avoid importing the three.js
+// bundle into the 2D path). Accessed defensively for older payloads.
+type ExtMetrics = {
+  hotspotScore: number;
+  bugCommits: number;
+  ageDays: number;
+  todoMarkers: number;
+  functionCount: number;
+};
+function ext(file: FileNode): Partial<ExtMetrics> {
+  return file as FileNode & Partial<ExtMetrics>;
+}
+
 // Color a file by the active "Color by" metric (mirrors CityCanvas.metricHex,
 // duplicated here so the 2D fallback doesn't eagerly import the three.js bundle).
 function metricHex(file: FileNode, mode: ColorMode): string {
   switch (mode) {
+    case "hotspot": return riskToHex(Math.min(1, ext(file).hotspotScore ?? 0));
     case "churn": return riskToHex(Math.min(1, file.churnCommits / 100));
     case "complexity": return riskToHex(Math.min(1, file.complexity / 30));
     case "coverage": return riskToHex(1 - file.testCoverage / 100);
@@ -64,6 +80,7 @@ function blobUrl(repoUrl: string, path: string): string {
 
 const COLOR_BY_OPTIONS: { value: ColorMode; label: string }[] = [
   { value: "risk", label: "Risk Score" },
+  { value: "hotspot", label: "Hotspot" },
   { value: "churn", label: "Churn" },
   { value: "complexity", label: "Complexity" },
   { value: "coverage", label: "Test Coverage" },
@@ -219,7 +236,7 @@ function City2DFallback({ files, onFileClick, selectedId, colorBy }: {
 
 // A colored icon chip used in the bottom stats bar
 function StatChip({ icon: Icon, tint, label, value, valueClass }: {
-  icon: React.ElementType;
+  icon: React.ComponentType<{ className?: string }>;
   tint: string;          // e.g. "text-blue-400 bg-blue-400/15"
   label: string;
   value: string | number;
@@ -262,6 +279,114 @@ function MetricCard({ label, value, color, spark }: { label: string; value: stri
         {spark}
       </div>
       <div className={cn("text-xl font-bold", color ?? "text-foreground")}>{value}</div>
+    </div>
+  );
+}
+
+// ─── Claude-powered file insight ─────────────────────────────────────────────
+
+interface AiInsight {
+  summary: string;
+  severity: "low" | "medium" | "high";
+  debtDrivers: string[];
+  refactorSteps: string[];
+  estimatedEffort: string;
+}
+
+const SEVERITY_STYLE: Record<string, string> = {
+  low: "bg-green-400/15 text-green-400 border-green-400/25",
+  medium: "bg-orange-400/15 text-orange-400 border-orange-400/25",
+  high: "bg-red-400/15 text-red-400 border-red-400/25",
+};
+
+function AiInsightCard({ repoId, fileId }: { repoId: number; fileId: number }) {
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [insight, setInsight] = useState<AiInsight | null>(null);
+  const [error, setError] = useState<string>("");
+
+  async function run() {
+    setState("loading");
+    setError("");
+    try {
+      const res = await fetch(`/api/repositories/${repoId}/files/${fileId}/ai-insight`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `Request failed (${res.status})`);
+      }
+      setInsight(await res.json());
+      setState("done");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+      setState("error");
+    }
+  }
+
+  return (
+    <div className="mb-3 border border-emerald-500/25 bg-emerald-500/[0.04] rounded-md p-3">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+          <Sparkles className="w-3 h-3 text-emerald-400" /> AI Debt Analysis
+        </h4>
+        {state !== "loading" && (
+          <button
+            onClick={run}
+            className="text-[10px] font-semibold text-emerald-400 hover:underline"
+            data-testid="button-ai-insight"
+          >
+            {state === "done" || state === "error" ? "Re-analyze" : "Analyze with Claude"}
+          </button>
+        )}
+      </div>
+
+      {state === "idle" && (
+        <p className="text-[10px] text-muted-foreground">
+          Run Claude over this file's source and metrics for a debt assessment and a concrete refactor plan.
+        </p>
+      )}
+      {state === "loading" && (
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-1">
+          <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" /> Claude is analyzing…
+        </div>
+      )}
+      {state === "error" && (
+        <p className="text-[10px] text-red-400">{error}</p>
+      )}
+      {state === "done" && insight && (
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2">
+            <span className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded-full border uppercase", SEVERITY_STYLE[insight.severity])}>
+              {insight.severity} severity
+            </span>
+            <span className="text-[9px] text-muted-foreground">Effort: {insight.estimatedEffort}</span>
+          </div>
+          <p className="text-[11px] text-foreground leading-relaxed">{insight.summary}</p>
+          {insight.debtDrivers.length > 0 && (
+            <div>
+              <div className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Debt drivers</div>
+              <div className="flex flex-wrap gap-1">
+                {insight.debtDrivers.map((d, i) => (
+                  <span key={i} className="text-[10px] bg-muted/60 border border-border rounded px-1.5 py-0.5 text-foreground">{d}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {insight.refactorSteps.length > 0 && (
+            <div>
+              <div className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Refactor plan</div>
+              <ol className="space-y-1">
+                {insight.refactorSteps.map((s, i) => (
+                  <li key={i} className="text-[11px] text-foreground flex gap-1.5">
+                    <span className="text-emerald-400 font-bold shrink-0">{i + 1}.</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -343,18 +468,34 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
                 spark={<Sparkline seed={file.id * 7 + 1} color={riskToHex(file.riskScore)} />}
               />
               <MetricCard
+                label="Hotspot"
+                value={(ext(file).hotspotScore ?? 0).toFixed(2)}
+                color={
+                  (ext(file).hotspotScore ?? 0) < 0.3 ? "text-green-400" :
+                  (ext(file).hotspotScore ?? 0) < 0.6 ? "text-orange-400" : "text-red-400"
+                }
+                spark={<Sparkline seed={file.id * 5 + 3} color={riskToHex(ext(file).hotspotScore ?? 0)} />}
+              />
+              <MetricCard
                 label="Churn (Commits)"
                 value={file.churnCommits}
                 spark={<Sparkline seed={file.id * 13 + 5} color="#60a5fa" />}
               />
+              <MetricCard
+                label="Bug-Fix Commits"
+                value={ext(file).bugCommits ?? 0}
+                color={(ext(file).bugCommits ?? 0) > 5 ? "text-red-400" : (ext(file).bugCommits ?? 0) > 0 ? "text-orange-400" : undefined}
+              />
               <MetricCard label="Lines of Code" value={file.linesOfCode.toLocaleString()} />
-              <MetricCard label="Complexity" value={file.complexity} />
+              <MetricCard label="Cyclomatic Cplx" value={file.complexity} />
+              <MetricCard label="Functions" value={ext(file).functionCount ?? 0} />
               <MetricCard
                 label="Test Coverage"
                 value={`${file.testCoverage}%`}
                 color={file.testCoverage >= 60 ? "text-green-400" : file.testCoverage >= 40 ? "text-yellow-400" : "text-red-400"}
               />
               <MetricCard label="Authors" value={file.authors} />
+              <MetricCard label="TODO/FIXME" value={ext(file).todoMarkers ?? 0} color={(ext(file).todoMarkers ?? 0) > 0 ? "text-yellow-400" : undefined} />
             </div>
             <div className="mb-3">
               <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
@@ -367,6 +508,7 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
                 />
               </div>
             </div>
+            <AiInsightCard repoId={repoId} fileId={fileId} />
             {file.riskFactors && file.riskFactors.length > 0 && (
               <div className="mb-3">
                 <h4 className="text-[11px] font-semibold text-foreground mb-2 flex items-center gap-1.5">

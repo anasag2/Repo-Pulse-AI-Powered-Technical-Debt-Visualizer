@@ -49,11 +49,46 @@ class FileNode(BaseModel):
     complexity: int
     testCoverage: int
     authors: int
+    # Extended metrics (default 0 so aggregate/directory nodes stay valid).
+    hotspotScore: float = 0.0
+    bugCommits: int = 0
+    ageDays: int = 0
+    todoMarkers: int = 0
+    functionCount: int = 0
 
 
 class RiskFactor(BaseModel):
     name: str
     score: float
+
+
+class CouplingPair(BaseModel):
+    fileAId: int
+    fileBId: int
+    fileA: str
+    fileB: str
+    pathA: str
+    pathB: str
+    coChanges: int
+    degree: float
+
+
+class AIStatus(BaseModel):
+    enabled: bool
+    model: str
+
+
+class AIFileInsight(BaseModel):
+    summary: str
+    severity: str
+    debtDrivers: List[str]
+    refactorSteps: List[str]
+    estimatedEffort: str
+
+
+class AIReport(BaseModel):
+    markdown: str
+    model: str
 
 
 class Commit(BaseModel):
