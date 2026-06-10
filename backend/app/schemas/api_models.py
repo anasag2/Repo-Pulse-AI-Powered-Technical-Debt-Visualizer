@@ -6,7 +6,7 @@ exactly what the generated `@workspace/api-client-react` client expects.
 from __future__ import annotations
 
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 
 
 class HealthStatus(BaseModel):
@@ -89,6 +89,38 @@ class AIFileInsight(BaseModel):
 class AIReport(BaseModel):
     markdown: str
     model: str
+
+
+# ─── Auth ────────────────────────────────────────────────────────────────────
+
+class SignupInput(BaseModel):
+    email: EmailStr
+    name: str = Field(min_length=1, max_length=80)
+    password: str = Field(min_length=8, max_length=72)
+
+
+class LoginInput(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=72)
+
+
+class UserPublic(BaseModel):
+    id: int
+    email: EmailStr
+    name: str
+    createdAt: str
+
+
+class AuthResponse(BaseModel):
+    accessToken: str
+    tokenType: str = "bearer"
+    user: UserPublic
+
+
+class UserSettings(BaseModel):
+    theme: str = "dark"            # "dark" | "light"
+    defaultColorBy: str = "risk"   # risk | hotspot | churn | complexity | coverage
+    defaultView: str = "3d"        # "3d" | "2d"
 
 
 class Commit(BaseModel):

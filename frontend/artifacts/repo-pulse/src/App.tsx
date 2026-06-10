@@ -11,6 +11,8 @@ import Snapshots from "@/pages/Snapshots";
 import Compare from "@/pages/Compare";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
+import Login from "@/pages/Login";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
 import {
   LayoutDashboard,
   GitBranch,
@@ -22,6 +24,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ChevronDown,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -60,6 +64,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const [, repoParams] = useRoute("/repositories/:id");
   const activeRepoId = repoParams?.id ? parseInt(repoParams.id) : null;
   const { data: repos } = useListRepositories();
+  const { user, logout } = useAuth();
   const recent = repos ? [...repos].reverse().slice(0, 6) : [];
 
   return (
@@ -180,16 +185,26 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         {!collapsed && <SectionLabel>Account</SectionLabel>}
         <div className={cn("flex items-center", collapsed ? "justify-center py-3" : "gap-2.5 px-3 py-2.5")}>
           <div
-            title="Anas · anas@example.com"
+            title={user ? `${user.name} · ${user.email}` : undefined}
             className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center text-xs font-bold text-emerald-400 shrink-0"
           >
-            A
+            {(user?.name?.[0] ?? "?").toUpperCase()}
           </div>
           {!collapsed && (
-            <div className="min-w-0">
-              <div className="text-[12px] font-medium text-sidebar-foreground truncate">Anas</div>
-              <div className="text-[10px] text-sidebar-foreground/45 truncate">anas@example.com</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[12px] font-medium text-sidebar-foreground truncate">{user?.name ?? "—"}</div>
+              <div className="text-[10px] text-sidebar-foreground/45 truncate">{user?.email ?? ""}</div>
             </div>
+          )}
+          {!collapsed && (
+            <button
+              onClick={logout}
+              title="Log out"
+              className="text-sidebar-foreground/50 hover:text-red-400 p-1 rounded-md hover:bg-sidebar-accent transition-colors shrink-0"
+              data-testid="button-logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           )}
         </div>
 
@@ -245,16 +260,38 @@ function Router() {
   );
 }
 
+// Gates the app behind auth: a loading splash while the stored token is
+// validated, the login page when signed out, the app when signed in.
+function AuthGate() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) return <Login />;
+
+  return (
+    <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+      <Layout>
+        <Router />
+      </Layout>
+      <Toaster />
+    </WouterRouter>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Layout>
-            <Router />
-          </Layout>
-          <Toaster />
-        </WouterRouter>
+        <AuthProvider>
+          <AuthGate />
+        </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );
