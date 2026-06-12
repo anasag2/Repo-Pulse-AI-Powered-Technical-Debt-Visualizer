@@ -41,12 +41,12 @@ function metricT(file: FileNode, mode: ColorMode): number {
 
 // Vivid color scale matching the reference image
 function scaleToHex(t: number): string {
-  if (t < 0.2)  return "#22c55e";   // bright green
-  if (t < 0.4)  return "#84cc16";   // lime
-  if (t < 0.55) return "#eab308";   // yellow
-  if (t < 0.7)  return "#f97316";   // orange
-  if (t < 0.85) return "#ef4444";   // red
-  return "#c084fc";                  // purple (critical)
+  if (t < 0.2) return "#00ff66";
+  if (t < 0.4) return "#8cff00";
+  if (t < 0.55) return "#ffe600";
+  if (t < 0.7) return "#ff9d00";
+  if (t < 0.85) return "#ff3300";
+  return "#ff00ff";
 }
 
 export function metricHex(file: FileNode, mode: ColorMode): string {
@@ -99,13 +99,31 @@ function Building({
   const color = scaleToHex(t);
 
   // Height based on churn, capped for visibility
-  const height = Math.max(0.4, Math.min(5.5, (file.churnCommits / 20))) * animationProgress;
+  const riskFactor = Math.pow(file.riskScore, 1.8);
+
+const height =
+  Math.max(
+    0.8,
+    Math.min(
+      18,
+      (file.linesOfCode / 120) * 0.25 +
+      file.complexity * 0.35 +
+      file.churnCommits * 0.08 +
+      riskFactor * 12
+    )
+  ) * animationProgress;
   // Width based on lines of code
   const baseSize = Math.max(0.4, Math.min(1.0, (file.linesOfCode / 800)));
 
   // Strong emissive so colors are vivid and visible
-  const emissiveBase = 1.0 + t * 1.5;
+  const emissiveBase = 2.0 + t * 3.5;
   const isHighRisk = file.riskScore > 0.65;
+  const isCritical = file.riskScore > 0.85;
+
+  const landmark =
+   file.riskScore > 0.9 &&
+   file.linesOfCode > 1000;
+  const finalHeight = landmark ? height * 2.2 : height; 
 
   const winRows = Math.min(20, Math.max(3, Math.round(height * 2)));
   const windowTex = useMemo(() => getWindowTexture(file.id % 8, winRows), [file.id, winRows]);
@@ -119,7 +137,11 @@ function Building({
     mat.emissiveIntensity = THREE.MathUtils.lerp(mat.emissiveIntensity, target, 0.15);
   });
 
-  const args: [number, number, number] = [baseSize, height, baseSize];
+  const args: [number, number, number] = [
+  isCritical ? baseSize * 1.4 : baseSize,
+  finalHeight,
+  isCritical ? baseSize * 1.4 : baseSize,
+  ];
   const material = (
     <meshStandardMaterial
       color={color}
@@ -134,7 +156,7 @@ function Building({
 
   const common = {
     ref: meshRef as never,
-    position: [position[0], height / 2, position[2]] as [number, number, number],
+    position: [position[0], finalHeight / 2, position[2]] as [number, number, number],
     onPointerOver: (e: { stopPropagation: () => void }) => { e.stopPropagation(); onPointerOver(); },
     onPointerOut,
     onClick: (e: { stopPropagation: () => void }) => { e.stopPropagation(); onClick(); },
@@ -151,9 +173,16 @@ function Building({
       )}
       {/* Glow ring for high risk */}
       {isHighRisk && (
-        <mesh position={[position[0], 0.02, position[2]]}>
-          <cylinderGeometry args={[baseSize * 1.3, baseSize * 1.5, 0.04, 16]} />
-          <meshBasicMaterial color={color} transparent opacity={0.5} />
+          <mesh position={[position[0], 0.02, position[2]]}>
+          <cylinderGeometry
+                          args={[
+                       baseSize * 1.8,
+                          baseSize * 2.2,
+                             0.08,
+                                   32,
+                                         ]}
+                                                  />
+          <meshBasicMaterial color={color} transparent opacity={0.9} />
         </mesh>
       )}
     </>
@@ -175,7 +204,7 @@ function District({
 
   // Tight grid — matches reference image density
   const cols = Math.ceil(Math.sqrt(buildings.length));
-  const spacing = 1.3;
+  const spacing = 0.85;
   const platformSize = Math.max(4.0, cols * spacing + 2.0);
   const platformColor = scaleToHex(avgRisk);
 
@@ -185,11 +214,11 @@ function District({
       <mesh position={[0, -0.06, 0]} receiveShadow>
         <boxGeometry args={[platformSize, 0.12, platformSize]} />
         <meshStandardMaterial
-          color="#050810"
-          emissive={platformColor}
-          emissiveIntensity={0.5}
-          roughness={0.5}
-          metalness={0.6}
+          color="#0d3f20"
+          emissive="#00ff66"
+          emissiveIntensity={0.35}
+          roughness={0.3}
+          metalness={0.8}
         />
       </mesh>
 
@@ -216,18 +245,18 @@ function District({
       {/* District label */}
       <Html position={[0, 0.5, -platformSize / 2 - 0.3]} center distanceFactor={14}>
         <div style={{
-          color: platformColor,
-          fontSize: "11px",
-          fontWeight: 700,
-          whiteSpace: "nowrap",
-          padding: "2px 7px",
-          backgroundColor: "rgba(5,10,20,0.88)",
-          border: `1.5px solid ${platformColor}`,
-          borderRadius: "4px",
-          boxShadow: `0 0 10px ${platformColor}60`,
-          pointerEvents: "none",
-          fontFamily: "monospace",
-        }}>
+         color: "#ffffff",
+        fontSize: "14px",
+         fontWeight: 600,
+         whiteSpace: "nowrap",
+        padding: "6px 12px",
+        backgroundColor: "#111827",
+        border: "1px solid #22c55e",
+        borderRadius: "6px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+        pointerEvents: "none",
+        fontFamily: "Inter, sans-serif",
+      }}>
           {dir || "root"} ({buildings.length})
         </div>
       </Html>
@@ -289,7 +318,7 @@ export default function CityCanvas({
   }, [files]);
 
   const positions = useMemo(() => {
-    const spacing = 7;
+    const spacing = 5;
     const cols = Math.ceil(Math.sqrt(filesByDir.length));
     return filesByDir.map((_, i) => {
       const col = i % cols;
@@ -328,7 +357,7 @@ export default function CityCanvas({
   // Camera: isometric angle, close enough to see details
   const cameraPos = useMemo((): [number, number, number] => {
     const d = maxDist * 1.1;
-    return [d * 0.7, d * 0.6, d * 0.7];
+    return [d * 0.95, d * 0.85, d * 0.95];
   }, [maxDist]);
 
   return (
@@ -345,8 +374,8 @@ export default function CityCanvas({
         toneMappingExposure: 1.0,
       }}
     >
-      <color attach="background" args={["#060a14"]} />
-      <fogExp2 attach="fog" args={["#060a14", 0.010]} />
+      <color attach="background" args={["#020202"]} />
+      <fogExp2 attach="fog" args={["#020202", 0.006]} />
 
       {!heavy && <SoftShadows size={20} samples={8} focus={0.9} />}
 
@@ -399,14 +428,14 @@ export default function CityCanvas({
         position={[0, -0.28, 0]}
         args={[300, 300]}
         infiniteGrid
-        cellSize={1}
-        cellThickness={0.5}
-        cellColor="#00bbbb"
-        sectionSize={5}
-        sectionThickness={1.0}
-        sectionColor="#cc00cc"
-        fadeDistance={80}
-        fadeStrength={1.0}
+        cellSize={0.8} 
+        cellThickness={0.8}
+        cellColor="#00ffff"
+        sectionSize={4}
+        sectionThickness={1.5}
+        sectionColor="#ff00ff"
+        fadeDistance={120}
+        fadeStrength={0.5}
       />
 
       {filesByDir.map(([dir, buildings], i) => (
@@ -437,7 +466,7 @@ export default function CityCanvas({
       <AnimationController />
 
       <EffectComposer enableNormalPass={false}>
-        <Bloom intensity={1.0} luminanceThreshold={0.2} luminanceSmoothing={0.9} mipmapBlur radius={0.8} />
+        <Bloom intensity={2.8} luminanceThreshold={0.1} luminanceSmoothing={0.95} mipmapBlur radius={1.2} />
         <Vignette offset={0.25} darkness={0.55} />
       </EffectComposer>
     </Canvas>
