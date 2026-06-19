@@ -69,6 +69,11 @@ cache/
 .coverage
 
 ############################
+# Repo-Pulse analysis scratch (cloned repos for analysis)
+############################
+backend/workspaces/
+
+############################
 # Secrets (never commit)
 ############################
 *.key

@@ -46,6 +46,9 @@ class RepoStore:
         self._coupling.create_index([("repoId", ASCENDING)])
         self._users.create_index([("email", ASCENDING)], unique=True)
         self._users.create_index([("id", ASCENDING)], unique=True)
+        self._users.create_index(
+            [("provider", ASCENDING), ("providerId", ASCENDING)], sparse=True
+        )
         self._settings.create_index([("userId", ASCENDING)], unique=True)
 
     # -- id allocation -----------------------------------------------------
@@ -161,13 +164,26 @@ class RepoStore:
         return repo.get("localPath") if repo else None
 
     # -- users -------------------------------------------------------------
-    def create_user(self, email: str, name: str, password_hash: str) -> Dict:
-        """Insert a new user. Raises pymongo.errors.DuplicateKeyError if email taken."""
+    def create_user(
+        self,
+        email: str,
+        name: str,
+        password_hash: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> Dict:
+        """Insert a new user. Raises pymongo.errors.DuplicateKeyError if email taken.
+
+        OAuth users have no password (``password_hash`` is None) and carry a
+        ``provider``/``providerId`` pair instead.
+        """
         user = {
             "id": self._next_seq("user"),
             "email": email,
             "name": name,
             "passwordHash": password_hash,
+            "provider": provider,
+            "providerId": provider_id,
             "createdAt": datetime.now(timezone.utc).isoformat(),
         }
         self._users.insert_one(user)
@@ -178,6 +194,18 @@ class RepoStore:
 
     def get_user_by_id(self, user_id: int) -> Optional[Dict]:
         return self._users.find_one({"id": user_id}, {"_id": 0})
+
+    def get_user_by_provider(self, provider: str, provider_id: str) -> Optional[Dict]:
+        return self._users.find_one(
+            {"provider": provider, "providerId": provider_id}, {"_id": 0}
+        )
+
+    def link_provider(self, user_id: int, provider: str, provider_id: str) -> None:
+        """Attach a social provider to an existing (e.g. email/password) account."""
+        self._users.update_one(
+            {"id": user_id},
+            {"$set": {"provider": provider, "providerId": provider_id}},
+        )
 
     # -- per-user settings -------------------------------------------------
     def get_settings(self, user_id: int) -> Dict:

@@ -62,6 +62,35 @@ export function login(email: string, password: string) {
   return authPost("login", { email, password });
 }
 
+// Social login (OAuth): send the browser to the backend, which redirects on to
+// the provider. After the provider calls back, the backend bounces us here with
+// the result in the URL hash (#token=... or #error=...) — see consumeOAuthRedirect.
+export function startGitHubLogin(): void {
+  window.location.href = "/api/auth/github/login";
+}
+
+// If we just came back from an OAuth round-trip, persist the token (or surface
+// the error) and strip the hash so it doesn't linger in the URL / history.
+// Returns an error message if the provider reported one, else null.
+export function consumeOAuthRedirect(): string | null {
+  const hash = window.location.hash;
+  if (!hash || (!hash.includes("token=") && !hash.includes("error="))) return null;
+
+  const params = new URLSearchParams(hash.slice(1));
+  const token = params.get("token");
+  const error = params.get("error");
+
+  // Remove the hash without adding a history entry or reloading.
+  const cleanUrl = window.location.pathname + window.location.search;
+  window.history.replaceState(null, "", cleanUrl);
+
+  if (token) {
+    setToken(token);
+    return null;
+  }
+  return error ?? "Social login failed";
+}
+
 // Validate the stored token and load the current user (null if no/invalid token).
 export async function fetchMe(): Promise<AuthUser | null> {
   const token = getToken();

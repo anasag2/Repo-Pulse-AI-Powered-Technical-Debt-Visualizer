@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Activity, Loader2 } from "lucide-react";
+import { Activity, Github, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { startGitHubLogin } from "@/lib/auth";
 
 export default function Login() {
-  const { login, signup } = useAuth();
+  const { login, signup, oauthError } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -12,6 +13,8 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
 
   const isSignup = mode === "signup";
+  // Show a failed-OAuth message until the user starts typing a normal login.
+  const displayError = error || oauthError || "";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -81,9 +84,9 @@ export default function Login() {
               required
             />
 
-            {error && (
+            {displayError && (
               <div className="text-[11px] text-red-400 bg-red-400/10 border border-red-400/20 rounded-md px-2.5 py-2">
-                {error}
+                {displayError}
               </div>
             )}
 
@@ -97,6 +100,26 @@ export default function Login() {
               {isSignup ? "Create account" : "Log in"}
             </button>
           </form>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-4">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+              or
+            </span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          {/* Social login */}
+          <button
+            type="button"
+            onClick={startGitHubLogin}
+            className="w-full h-9 rounded-md border border-border bg-background text-sm font-semibold text-foreground hover:bg-foreground/5 transition-colors flex items-center justify-center gap-2"
+            data-testid="button-auth-github"
+          >
+            <Github className="w-4 h-4" />
+            Continue with GitHub
+          </button>
 
           <div className="mt-4 text-center text-xs text-muted-foreground">
             {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
