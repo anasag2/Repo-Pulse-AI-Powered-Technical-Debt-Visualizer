@@ -10,8 +10,10 @@ The CSRF `state` is a short-lived JWT signed with JWT_SECRET, so we don't need
 any server-side session storage between the /login redirect and the /callback.
 
 Config via env:
-  GITHUB_CLIENT_ID        OAuth app client id
-  GITHUB_CLIENT_SECRET    OAuth app client secret
+  GITHUB_CLIENT_ID        GitHub OAuth app client id
+  GITHUB_CLIENT_SECRET    GitHub OAuth app client secret
+  GOOGLE_CLIENT_ID        Google OAuth client id
+  GOOGLE_CLIENT_SECRET    Google OAuth client secret
   OAUTH_REDIRECT_BASE     base URL the provider calls back to
                           (default http://localhost:8000)
   FRONTEND_URL            where we send the browser after success
@@ -41,6 +43,11 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 _GH_AUTHORIZE = "https://github.com/login/oauth/authorize"
 _GH_TOKEN = "https://github.com/login/oauth/access_token"
 _GH_API = "https://api.github.com"
+
+# Google endpoints.
+_GOOGLE_AUTHORIZE = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO = "https://openidconnect.googleapis.com/v1/userinfo"
 
 
 @dataclass
@@ -173,3 +180,75 @@ def _github_primary_email(client: httpx.Client, headers: dict, gh_user: dict) ->
         return gh_user["email"].lower().strip()
     login = gh_user.get("login") or gh_user.get("id")
     return f"{login}@users.noreply.github.com"
+
+
+# ─── Google ──────────────────────────────────────────────────────────────────
+
+def _google_credentials() -> tuple[str, str]:
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise OAuthError(
+            "Google login is not configured "
+            "(set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)."
+        )
+    return client_id, client_secret
+
+
+def google_callback_url() -> str:
+    return f"{_OAUTH_REDIRECT_BASE}/api/auth/google/callback"
+
+
+def google_authorize_url(state: str) -> str:
+    """Build the URL we redirect the browser to so the user can authorize."""
+    client_id, _ = _google_credentials()
+    params = {
+        "client_id": client_id,
+        "redirect_uri": google_callback_url(),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    return f"{_GOOGLE_AUTHORIZE}?{urlencode(params)}"
+
+
+def google_exchange(code: str) -> OAuthIdentity:
+    """Exchange the authorization code for an identity (token never leaves here)."""
+    client_id, client_secret = _google_credentials()
+    with httpx.Client(timeout=10.0) as client:
+        token_res = client.post(
+            _GOOGLE_TOKEN,
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": google_callback_url(),
+            },
+        )
+        token_data = token_res.json() if token_res.is_success else {}
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise OAuthError("Google did not return an access token.")
+
+        userinfo_res = client.get(
+            _GOOGLE_USERINFO,
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if not userinfo_res.is_success:
+            raise OAuthError("Could not fetch Google profile.")
+        info = userinfo_res.json()
+
+    email = info.get("email")
+    if not email:
+        raise OAuthError("Google account did not provide an email.")
+    name = info.get("name") or email.split("@")[0]
+    return OAuthIdentity(
+        provider="google",
+        provider_id=str(info.get("sub")),
+        email=email.lower().strip(),
+        name=name,
+    )

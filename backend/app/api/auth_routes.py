@@ -127,19 +127,30 @@ def _frontend_redirect(*, token: str | None = None, error: str | None = None) ->
     return RedirectResponse(url=f"{oauth.FRONTEND_URL}/#{fragment}")
 
 
-@router.get("/github/login")
-def github_login():
-    """Kick off the GitHub flow by redirecting to GitHub's authorize page."""
+# Per-provider plumbing: how to build the authorize URL and how to exchange a
+# code for a verified identity. Adding a provider is just an entry here plus the
+# two thin routes below.
+_AUTHORIZE_URL = {
+    "github": oauth.github_authorize_url,
+    "google": oauth.google_authorize_url,
+}
+_EXCHANGE = {
+    "github": oauth.github_exchange,
+    "google": oauth.google_exchange,
+}
+
+
+def _oauth_login(provider: str) -> RedirectResponse:
+    """Kick off a provider flow by redirecting to its authorize page."""
     try:
-        state = oauth.issue_state("github")
-        return RedirectResponse(url=oauth.github_authorize_url(state))
+        state = oauth.issue_state(provider)
+        return RedirectResponse(url=_AUTHORIZE_URL[provider](state))
     except oauth.OAuthError as exc:
         return _frontend_redirect(error=str(exc))
 
 
-@router.get("/github/callback")
-def github_callback(request: Request):
-    """Handle GitHub's redirect back: exchange the code and mint our own JWT."""
+def _oauth_callback(provider: str, request: Request) -> RedirectResponse:
+    """Handle a provider's redirect back: exchange the code and mint our JWT."""
     params = request.query_params
     if params.get("error"):
         return _frontend_redirect(
@@ -148,14 +159,34 @@ def github_callback(request: Request):
 
     code = params.get("code")
     state = params.get("state")
-    if not code or not oauth.verify_state(state, "github"):
+    if not code or not oauth.verify_state(state, provider):
         return _frontend_redirect(error="Invalid OAuth state or missing code.")
 
     try:
-        identity = oauth.github_exchange(code)
+        identity = _EXCHANGE[provider](code)
     except oauth.OAuthError as exc:
         return _frontend_redirect(error=str(exc))
 
     user = _find_or_create_oauth_user(identity)
     token = auth.create_access_token(user["id"])
     return _frontend_redirect(token=token)
+
+
+@router.get("/github/login")
+def github_login():
+    return _oauth_login("github")
+
+
+@router.get("/github/callback")
+def github_callback(request: Request):
+    return _oauth_callback("github", request)
+
+
+@router.get("/google/login")
+def google_login():
+    return _oauth_login("google")
+
+
+@router.get("/google/callback")
+def google_callback(request: Request):
+    return _oauth_callback("google", request)

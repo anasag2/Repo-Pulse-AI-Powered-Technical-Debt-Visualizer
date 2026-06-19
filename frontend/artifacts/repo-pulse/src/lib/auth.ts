@@ -69,6 +69,10 @@ export function startGitHubLogin(): void {
   window.location.href = "/api/auth/github/login";
 }
 
+export function startGoogleLogin(): void {
+  window.location.href = "/api/auth/google/login";
+}
+
 // If we just came back from an OAuth round-trip, persist the token (or surface
 // the error) and strip the hash so it doesn't linger in the URL / history.
 // Returns an error message if the provider reported one, else null.

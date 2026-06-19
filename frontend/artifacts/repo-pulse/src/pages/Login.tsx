@@ -1,7 +1,31 @@
 import { useState } from "react";
 import { Activity, Github, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { startGitHubLogin } from "@/lib/auth";
+import { startGitHubLogin, startGoogleLogin } from "@/lib/auth";
+
+// Google's multicolor "G" mark (lucide-react ships no brand icon for it).
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M23.06 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h6.2a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.44-4.96 3.44-8.38z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.1 0 5.7-1.03 7.62-2.79l-3.72-2.89c-1.03.69-2.35 1.1-3.9 1.1-3 0-5.55-2.03-6.46-4.76H1.7v2.98A11.5 11.5 0 0 0 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.54 14.66a6.9 6.9 0 0 1 0-4.41V7.27H1.7a11.5 11.5 0 0 0 0 10.37l3.84-2.98z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.77c1.69 0 3.2.58 4.4 1.72l3.3-3.3C17.7 1.2 15.1 0 12 0A11.5 11.5 0 0 0 1.7 7.27l3.84 2.98C6.45 6.8 9 4.77 12 4.77z"
+      />
+    </svg>
+  );
+}
 
 export default function Login() {
   const { login, signup, oauthError } = useAuth();
@@ -111,15 +135,26 @@ export default function Login() {
           </div>
 
           {/* Social login */}
-          <button
-            type="button"
-            onClick={startGitHubLogin}
-            className="w-full h-9 rounded-md border border-border bg-background text-sm font-semibold text-foreground hover:bg-foreground/5 transition-colors flex items-center justify-center gap-2"
-            data-testid="button-auth-github"
-          >
-            <Github className="w-4 h-4" />
-            Continue with GitHub
-          </button>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={startGitHubLogin}
+              className="w-full h-9 rounded-md border border-border bg-background text-sm font-semibold text-foreground hover:bg-foreground/5 transition-colors flex items-center justify-center gap-2"
+              data-testid="button-auth-github"
+            >
+              <Github className="w-4 h-4" />
+              Continue with GitHub
+            </button>
+            <button
+              type="button"
+              onClick={startGoogleLogin}
+              className="w-full h-9 rounded-md border border-border bg-background text-sm font-semibold text-foreground hover:bg-foreground/5 transition-colors flex items-center justify-center gap-2"
+              data-testid="button-auth-google"
+            >
+              <GoogleIcon className="w-4 h-4" />
+              Continue with Google
+            </button>
+          </div>
 
           <div className="mt-4 text-center text-xs text-muted-foreground">
             {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
