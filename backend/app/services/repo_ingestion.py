@@ -28,24 +28,30 @@ def clone_remote_repository(url: str) -> tuple[bool, str, Optional[str]]:
             [
                 "git",
                 "clone",
+                # Shallow + single branch + no tags keeps even very large repos
+                # (e.g. kubernetes) to a feasible download. Depth 300 still gives
+                # the history-based metrics (churn, coupling, ownership) a useful
+                # window; the commit view only needs the latest 30.
                 "--depth",
-                "1000",
+                "300",
+                "--single-branch",
+                "--no-tags",
                 url,
                 str(target_path)
             ],
             capture_output=True,
             text=True,
             check=True,
-            timeout=180
+            timeout=300
         )
 
         return True, "Remote repository cloned successfully.", str(target_path)
-    
+
     except subprocess.TimeoutExpired:
         if target_path.exists():
             shutil.rmtree(target_path, ignore_errors=True)
 
-        return False, "Cloning timed out. The repository may be too large or the connection is slow>", None
+        return False, "Cloning timed out. The repository may be too large or the connection is too slow.", None
     
     except subprocess.CalledProcessError as e:
         if target_path.exists():

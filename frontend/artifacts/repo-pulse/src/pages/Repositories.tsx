@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useListRepositories, useAnalyzeRepository, getListRepositoriesQueryKey } from "@workspace/api-client-react";
+import { useListRepositories, getListRepositoriesQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Search, Plus, Trash2, ExternalLink, AlertTriangle, FileText, Clock } from "lucide-react";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
 import { useDeleteRepository } from "@workspace/api-client-react";
+import { useAnalysis } from "@/lib/analysis-context";
 
 function riskColor(score: number) {
   if (score < 0.3) return "text-green-400";
@@ -33,10 +34,11 @@ export default function Repositories() {
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const { data: repos, isLoading } = useListRepositories();
-  const analyzeRepo = useAnalyzeRepository();
   const deleteRepo = useDeleteRepository();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { startAnalysis, status: analysisStatus } = useAnalysis();
+  const isAnalyzing = analysisStatus === "running";
 
   const { register, handleSubmit, reset, formState: { isSubmitting } } = useForm<{ name: string; url: string; isPublic: boolean }>({
     defaultValues: { name: "", url: "", isPublic: true },
@@ -48,21 +50,12 @@ export default function Repositories() {
       r.url.toLowerCase().includes(search.toLowerCase())
   ) ?? [];
 
-  const onSubmit = async (data: { name: string; url: string; isPublic: boolean }) => {
-    analyzeRepo.mutate(
-      { data },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getListRepositoriesQueryKey() });
-          toast({ title: "Repository analyzed", description: `${data.name} has been added.` });
-          reset();
-          setShowForm(false);
-        },
-        onError: () => {
-          toast({ title: "Error", description: "Failed to analyze repository.", variant: "destructive" });
-        },
-      }
-    );
+  const onSubmit = (data: { name: string; url: string; isPublic: boolean }) => {
+    // Hand off to the global analysis flow: it navigates to the dashboard and
+    // shows the progress overlay, then routes to the new repo when done.
+    startAnalysis(data);
+    reset();
+    setShowForm(false);
   };
 
   const handleDelete = (id: number, name: string) => {
@@ -113,11 +106,11 @@ export default function Repositories() {
             />
             <button
               type="submit"
-              disabled={isSubmitting || analyzeRepo.isPending}
+              disabled={isSubmitting || isAnalyzing}
               className="px-4 py-2 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-60 transition-colors"
               data-testid="button-submit-analyze"
             >
-              {analyzeRepo.isPending ? "Analyzing..." : "Analyze"}
+              {isAnalyzing ? "Analyzing..." : "Analyze"}
             </button>
             <button
               type="button"

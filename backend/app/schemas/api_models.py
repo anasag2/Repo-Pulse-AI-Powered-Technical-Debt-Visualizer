@@ -121,6 +121,7 @@ class UserSettings(BaseModel):
     theme: str = "dark"            # "dark" | "light"
     defaultColorBy: str = "risk"   # risk | hotspot | churn | complexity | coverage
     defaultView: str = "3d"        # "3d" | "2d"
+    avatar: str = ""               # "" (initials) | "preset:<id>" | data-URL (custom upload)
 
 
 class Commit(BaseModel):

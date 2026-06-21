@@ -13,6 +13,9 @@ import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { AnalysisProvider } from "@/lib/analysis-context";
+import AnalysisOverlay from "@/components/AnalysisOverlay";
+import AvatarButton from "@/components/AvatarButton";
 import {
   LayoutDashboard,
   GitBranch,
@@ -23,7 +26,6 @@ import {
   Plus,
   ChevronsLeft,
   ChevronsRight,
-  ChevronDown,
   LogOut,
   Loader2,
 } from "lucide-react";
@@ -76,11 +78,22 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
     >
       {/* Brand */}
       <div className={cn("flex items-center h-14 border-b border-sidebar-border shrink-0", collapsed ? "justify-center px-0" : "px-3 gap-2")}>
-        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15 shrink-0">
-          <Activity className="w-4 h-4 text-emerald-400" />
-        </div>
-        {!collapsed && (
+        {collapsed ? (
+          // Collapsed: the logo doubles as the expand control (chevron on hover).
+          <button
+            onClick={onToggle}
+            title="Expand sidebar"
+            className="group flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15 hover:bg-sidebar-accent transition-colors"
+            data-testid="button-expand-sidebar"
+          >
+            <Activity className="w-4 h-4 text-emerald-400 group-hover:hidden" />
+            <ChevronsRight className="w-4 h-4 text-sidebar-foreground hidden group-hover:block" />
+          </button>
+        ) : (
           <>
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15 shrink-0">
+              <Activity className="w-4 h-4 text-emerald-400" />
+            </div>
             <span className="text-sm font-bold text-sidebar-foreground tracking-tight">Repo-Pulse</span>
             <button
               onClick={onToggle}
@@ -142,9 +155,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         {/* Recent repositories */}
         {!collapsed && (
           <>
-            <SectionLabel action={<ChevronDown className="w-3.5 h-3.5 text-sidebar-foreground/40" />}>
-              Recent Repositories
-            </SectionLabel>
+            <SectionLabel>Recent Repositories</SectionLabel>
             <div className="px-2 space-y-0.5">
               {recent.length === 0 ? (
                 <p className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/40">No repositories yet</p>
@@ -184,16 +195,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       <div className="shrink-0 border-t border-sidebar-border">
         {!collapsed && <SectionLabel>Account</SectionLabel>}
         <div className={cn("flex items-center", collapsed ? "justify-center py-3" : "gap-2.5 px-3 py-2.5")}>
-          <div
-            title={user ? `${user.name} · ${user.email}` : undefined}
-            className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center text-xs font-bold text-emerald-400 shrink-0"
-          >
-            {(user?.name?.[0] ?? "?").toUpperCase()}
-          </div>
+          <AvatarButton size={28} className="shrink-0" />
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="text-[12px] font-medium text-sidebar-foreground truncate">{user?.name ?? "—"}</div>
-              <div className="text-[10px] text-sidebar-foreground/45 truncate">{user?.email ?? ""}</div>
+              <div className="text-[13px] font-medium text-sidebar-foreground truncate">{user?.name ?? "—"}</div>
             </div>
           )}
           {!collapsed && (
@@ -277,10 +282,13 @@ function AuthGate() {
 
   return (
     <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-      <Layout>
-        <Router />
-      </Layout>
-      <Toaster />
+      <AnalysisProvider>
+        <Layout>
+          <Router />
+        </Layout>
+        <AnalysisOverlay />
+        <Toaster />
+      </AnalysisProvider>
     </WouterRouter>
   );
 }

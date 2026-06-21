@@ -74,6 +74,11 @@ cache/
 backend/workspaces/
 
 ############################
+# Local Claude Code skills (not part of the repo)
+############################
+.claude/skills/
+
+############################
 # Secrets (never commit)
 ############################
 *.key
