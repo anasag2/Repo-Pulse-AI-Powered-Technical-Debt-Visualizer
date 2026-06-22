@@ -12,6 +12,7 @@ import type { FileNode } from "@workspace/api-client-react";
 import type { ColorMode } from "@/components/CityCanvas";
 import CouplingGraph from "@/components/CouplingGraph";
 import AvatarButton from "@/components/AvatarButton";
+import ChatDrawer from "@/components/ChatDrawer";
 import { isCodeFile } from "@/lib/file-classify";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +38,7 @@ import {
   ExternalLink,
   Sparkles,
   FileCode2,
+  MessageSquare,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -642,6 +644,7 @@ export default function RepositoryView() {
   const [colorBy, setColorBy] = useState<ColorMode>("risk");
   const [search, setSearch] = useState("");
   const [codeOnly, setCodeOnly] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: repo, isLoading: repoLoading } = useGetRepository(repoId, {
@@ -724,6 +727,20 @@ export default function RepositoryView() {
             </div>
             <button onClick={refresh} title="Re-fetch analysis" className="text-muted-foreground hover:text-foreground p-1 transition-colors" data-testid="button-refresh">
               <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setChatOpen((v) => !v)}
+              title="Ask the repo assistant"
+              className={cn(
+                "flex items-center gap-1.5 h-7 px-2.5 rounded-md text-xs font-medium transition-colors",
+                chatOpen
+                  ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                  : "bg-emerald-500 text-white hover:bg-emerald-400",
+              )}
+              data-testid="button-open-chat"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ask AI</span>
             </button>
             <div className="h-5 w-px bg-border" />
             <button title="Help" className="text-muted-foreground hover:text-foreground p-1 transition-colors">
@@ -936,6 +953,13 @@ export default function RepositoryView() {
           </div>
         )}
       </div>
+
+      <ChatDrawer
+        repoId={repoId}
+        selectedFile={selectedFile}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
     </div>
   );
 }

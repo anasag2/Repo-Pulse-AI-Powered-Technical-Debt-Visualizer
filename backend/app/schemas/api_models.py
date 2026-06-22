@@ -146,3 +146,33 @@ class DashboardSummary(BaseModel):
     avgRiskScore: float
     avgTestCoverage: int
     recentlyAnalyzed: List[Repository]
+
+
+# ─── Chat (multi-model assistant) ─────────────────────────────────────────────
+
+class ChatMessageInput(BaseModel):
+    role: str       # "user" | "assistant"
+    content: str
+
+
+class ChatInput(BaseModel):
+    messages: List[ChatMessageInput]
+    model: Optional[str] = None
+    fileId: Optional[int] = None    # the file the user is looking at, for context
+    apiKey: Optional[str] = None    # BYOK: sent per request, never stored server-side
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    model: str
+
+
+class ChatModel(BaseModel):
+    id: str
+    label: str
+    free: bool
+
+
+class ChatModelsResponse(BaseModel):
+    models: List[ChatModel]
+    hasAppKey: bool    # server has a default key → the free experience works without BYOK

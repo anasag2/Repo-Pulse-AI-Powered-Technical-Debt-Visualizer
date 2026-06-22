@@ -17,6 +17,9 @@ from app.schemas.api_models import (
     AIFileInsight,
     AIReport,
     AIStatus,
+    ChatInput,
+    ChatModelsResponse,
+    ChatResponse,
     Commit,
     CouplingPair,
     DashboardSummary,
@@ -28,6 +31,7 @@ from app.schemas.api_models import (
     UserSettings,
 )
 from app.services import ai_analysis
+from app.services import chat as chat_service
 from app.services.analysis import build_repository_analysis
 from app.services.repo_ingestion import clone_remote_repository
 from app.store import store
@@ -140,6 +144,45 @@ def list_coupling(repo_id: int, current: Dict = Depends(get_current_user)):
 @router.get("/ai/status", response_model=AIStatus)
 def ai_status():
     return {"enabled": ai_analysis.ai_available(), "model": ai_analysis._MODEL}
+
+
+# ─── Chat (multi-model assistant) ─────────────────────────────────────────────
+
+@router.get("/chat/models", response_model=ChatModelsResponse)
+def chat_models(current: Dict = Depends(get_current_user)):
+    """Free models available for the dropdown + whether the server has a default key."""
+    return {
+        "models": chat_service.list_free_models(),
+        "hasAppKey": bool(chat_service.app_api_key()),
+    }
+
+
+@router.post("/repositories/{repo_id}/chat", response_model=ChatResponse)
+def repo_chat(repo_id: int, payload: ChatInput,
+              current: Dict = Depends(get_current_user)):
+    """Answer a chat turn grounded in this repo's metrics (+ the selected file)."""
+    repo = _owned_or_404(repo_id, current)
+    files = store.list_files(repo_id) or []
+    selected = store.get_file(repo_id, payload.fileId) if payload.fileId else None
+
+    model = payload.model or chat_service.DEFAULT_MODEL
+    api_key = payload.apiKey or chat_service.app_api_key()
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="No model key available. Add your own key in the chat settings, "
+                   "or set OPENROUTER_API_KEY on the backend for the free experience.",
+        )
+
+    system = chat_service.build_repo_context(repo, files, selected)
+    messages = [{"role": "system", "content": system}] + [
+        {"role": m.role, "content": m.content} for m in payload.messages
+    ]
+    try:
+        reply = chat_service.chat(messages, model=model, api_key=api_key)
+    except chat_service.ChatError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"reply": reply, "model": model}
 
 
 def _require_ai():
