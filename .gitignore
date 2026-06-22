@@ -67,6 +67,7 @@ reports/
 tmp/
 cache/
 .coverage
+frontend/artifacts/repo-pulse/.tsbuildinfo
 
 ############################
 # Repo-Pulse analysis scratch (cloned repos for analysis)
