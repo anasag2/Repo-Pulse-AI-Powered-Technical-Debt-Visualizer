@@ -12,6 +12,7 @@ import Compare from "@/pages/Compare";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
+import ResetPassword from "@/pages/ResetPassword";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { AnalysisProvider } from "@/lib/analysis-context";
 import AnalysisOverlay from "@/components/AnalysisOverlay";
@@ -269,6 +270,12 @@ function Router() {
 // validated, the login page when signed out, the app when signed in.
 function AuthGate() {
   const { user, loading } = useAuth();
+
+  // The password-reset page is opened from an emailed link, so it must work
+  // while logged out — handle it before the auth gate.
+  if (window.location.pathname.replace(/\/+$/, "").endsWith("/reset-password")) {
+    return <ResetPassword />;
+  }
 
   if (loading) {
     return (

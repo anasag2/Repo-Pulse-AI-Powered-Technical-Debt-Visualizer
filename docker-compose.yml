@@ -24,6 +24,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       # Public base URL — used for OAuth callbacks and the post-login redirect.
       OAUTH_REDIRECT_BASE: ${PUBLIC_URL}
       FRONTEND_URL: ${PUBLIC_URL}

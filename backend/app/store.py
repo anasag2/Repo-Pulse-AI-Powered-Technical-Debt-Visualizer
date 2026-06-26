@@ -36,6 +36,7 @@ class RepoStore:
         self._counters = db["counters"]
         self._users = db["users"]
         self._settings = db["user_settings"]
+        self._resets = db["password_resets"]
         self._ensure_indexes()
 
     def _ensure_indexes(self) -> None:
@@ -50,6 +51,9 @@ class RepoStore:
             [("provider", ASCENDING), ("providerId", ASCENDING)], sparse=True
         )
         self._settings.create_index([("userId", ASCENDING)], unique=True)
+        self._resets.create_index([("tokenHash", ASCENDING)], unique=True)
+        # TTL: Mongo auto-purges reset tokens once expiresAt passes.
+        self._resets.create_index("expiresAt", expireAfterSeconds=0)
 
     # -- id allocation -----------------------------------------------------
     def _next_seq(self, name: str) -> int:
@@ -206,6 +210,34 @@ class RepoStore:
             {"id": user_id},
             {"$set": {"provider": provider, "providerId": provider_id}},
         )
+
+    def set_password(self, user_id: int, password_hash: str) -> None:
+        self._users.update_one({"id": user_id}, {"$set": {"passwordHash": password_hash}})
+
+    # -- password resets ---------------------------------------------------
+    def create_password_reset(self, user_id: int, token_hash: str, expires_at: datetime) -> None:
+        self._resets.insert_one({
+            "userId": user_id,
+            "tokenHash": token_hash,
+            "expiresAt": expires_at,
+            "used": False,
+            "createdAt": datetime.now(timezone.utc),
+        })
+
+    def get_active_password_reset(self, token_hash: str) -> Optional[Dict]:
+        """Return an unused, unexpired reset record, else None."""
+        doc = self._resets.find_one({"tokenHash": token_hash, "used": False}, {"_id": 0})
+        if doc is None:
+            return None
+        exp = doc["expiresAt"]
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            return None
+        return doc
+
+    def consume_password_reset(self, token_hash: str) -> None:
+        self._resets.update_one({"tokenHash": token_hash}, {"$set": {"used": True}})
 
     # -- per-user settings -------------------------------------------------
     def get_settings(self, user_id: int) -> Dict:

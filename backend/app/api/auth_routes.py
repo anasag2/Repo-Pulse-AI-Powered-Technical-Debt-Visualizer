@@ -6,6 +6,9 @@ depend on `get_current_user`, which reads `Authorization: Bearer <token>`.
 """
 from __future__ import annotations
 
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Dict
 from urllib.parse import quote
 
@@ -14,9 +17,24 @@ from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pymongo.errors import DuplicateKeyError
 
-from app.schemas.api_models import AuthResponse, LoginInput, SignupInput, UserPublic
-from app.services import auth, oauth
+from app.schemas.api_models import (
+    AuthResponse,
+    ForgotPasswordInput,
+    LoginInput,
+    MessageResponse,
+    ResetPasswordInput,
+    SignupInput,
+    TokenValidity,
+    UserPublic,
+)
+from app.services import auth, email as email_service, oauth
 from app.store import store
+
+_RESET_TTL = timedelta(hours=1)
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -89,6 +107,46 @@ def login(payload: LoginInput):
 @router.get("/me", response_model=UserPublic)
 def me(current_user: Dict = Depends(get_current_user)):
     return _public(current_user)
+
+
+# ─── Password reset ──────────────────────────────────────────────────────────
+
+_GENERIC_RESET_MSG = "If an account with that email exists, a reset link has been sent."
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+def forgot_password(payload: ForgotPasswordInput):
+    """Issue a reset token and email it. Always returns the same message so the
+    response can't be used to discover which emails are registered."""
+    email = payload.email.lower().strip()
+    user = store.get_user_by_email(email)
+    if user is not None:
+        raw_token = secrets.token_urlsafe(32)
+        store.create_password_reset(
+            user["id"], _hash_token(raw_token), datetime.now(timezone.utc) + _RESET_TTL
+        )
+        reset_url = f"{oauth.FRONTEND_URL}/reset-password?token={raw_token}"
+        email_service.send_password_reset(email, reset_url)
+    return {"message": _GENERIC_RESET_MSG}
+
+
+@router.get("/reset-password/validate", response_model=TokenValidity)
+def validate_reset_token(token: str):
+    """Non-consuming check used by the reset page to show a dead link as expired."""
+    return {"valid": store.get_active_password_reset(_hash_token(token)) is not None}
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(payload: ResetPasswordInput):
+    """Consume a valid token and set the new password (also works for OAuth-only
+    accounts, which then gain a password they can log in with)."""
+    token_hash = _hash_token(payload.token)
+    record = store.get_active_password_reset(token_hash)
+    if record is None:
+        raise HTTPException(status_code=400, detail="This reset link is invalid or has expired.")
+    store.set_password(record["userId"], auth.hash_password(payload.password))
+    store.consume_password_reset(token_hash)
+    return {"message": "Your password has been updated. You can now log in."}
 
 
 # ─── Social login (OAuth) ────────────────────────────────────────────────────

@@ -62,6 +62,35 @@ export function login(email: string, password: string) {
   return authPost("login", { email, password });
 }
 
+// Password reset (public endpoints — no token, no AuthResponse).
+async function postPublic(path: string, body: unknown): Promise<void> {
+  const res = await fetch(`/api/auth/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(errorMessage(await res.json().catch(() => ({})), res.status));
+}
+
+export function requestPasswordReset(email: string): Promise<void> {
+  return postPublic("forgot-password", { email });
+}
+
+export function resetPassword(token: string, password: string): Promise<void> {
+  return postPublic("reset-password", { token, password });
+}
+
+// Non-consuming check so the reset page can show a used/expired link as dead.
+export async function validateResetToken(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/auth/reset-password/validate?token=${encodeURIComponent(token)}`);
+    if (!res.ok) return false;
+    return !!(await res.json()).valid;
+  } catch {
+    return false;
+  }
+}
+
 // Social login (OAuth): send the browser to the backend, which redirects on to
 // the provider. After the provider calls back, the backend bounces us here with
 // the result in the URL hash (#token=... or #error=...) — see consumeOAuthRedirect.

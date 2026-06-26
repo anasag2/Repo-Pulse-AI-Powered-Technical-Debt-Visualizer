@@ -5,8 +5,21 @@ exactly what the generated `@workspace/api-client-react` client expects.
 """
 from __future__ import annotations
 
+import re
 from typing import List, Optional
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+def _check_password_strength(v: str) -> str:
+    """8+ chars (enforced via Field) AND ≥3 of: lowercase, uppercase, number, symbol."""
+    categories = sum(
+        bool(re.search(pat, v)) for pat in (r"[a-z]", r"[A-Z]", r"\d", r"[^A-Za-z0-9]")
+    )
+    if categories < 3:
+        raise ValueError(
+            "Password must include at least 3 of: lowercase, uppercase, number, symbol"
+        )
+    return v
 
 
 class HealthStatus(BaseModel):
@@ -98,10 +111,37 @@ class SignupInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     password: str = Field(min_length=8, max_length=72)
 
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return _check_password_strength(v)
+
 
 class LoginInput(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=72)
+
+
+class ForgotPasswordInput(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordInput(BaseModel):
+    token: str
+    password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        return _check_password_strength(v)
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class TokenValidity(BaseModel):
+    valid: bool
 
 
 class UserPublic(BaseModel):

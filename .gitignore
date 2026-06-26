@@ -80,6 +80,11 @@ backend/workspaces/
 .claude/skills/
 
 ############################
+# Frontend build output
+############################
+frontend/artifacts/repo-pulse/dist/
+
+############################
 # Secrets (never commit)
 ############################
 *.key
