@@ -1,0 +1,52 @@
+# Full Repo-Pulse stack: MongoDB + FastAPI backend + Caddy (SPA + HTTPS proxy).
+# Secrets come from a local .env file (see .env.example). Run with:
+#   docker compose up -d --build
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: repo_pulse
+      JWT_SECRET: ${JWT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Public base URL — used for OAuth callbacks and the post-login redirect.
+      OAUTH_REDIRECT_BASE: ${PUBLIC_URL}
+      FRONTEND_URL: ${PUBLIC_URL}
+    volumes:
+      - backend_workspaces:/app/workspaces
+
+  caddy:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # prod: repo-pulse.com   |   local: ":80"
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  mongo_data:
+  backend_workspaces:
+  caddy_data:
+  caddy_config:

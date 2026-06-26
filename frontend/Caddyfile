@@ -1,0 +1,19 @@
+# Serves the built SPA and reverse-proxies the API — single origin, so no CORS.
+# SITE_ADDRESS controls the site + HTTPS:
+#   - prod:  repo-pulse.com   (Caddy auto-provisions a Let's Encrypt cert)
+#   - local: :80              (plain HTTP for testing)
+{$SITE_ADDRESS:localhost} {
+	encode gzip
+
+	# API → backend container.
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else → the static SPA, with client-side routing fallback.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
