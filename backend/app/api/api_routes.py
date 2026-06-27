@@ -10,7 +10,7 @@ from __future__ import annotations
 import shutil
 from typing import Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 
 from app.api.auth_routes import get_current_user
 from app.schemas.api_models import (
@@ -23,15 +23,18 @@ from app.schemas.api_models import (
     Commit,
     CouplingPair,
     DashboardSummary,
+    FileContent,
     FileDetail,
     FileNode,
     HealthStatus,
     Repository,
     RepositoryInput,
+    RepoTour,
     UserSettings,
 )
 from app.services import ai_analysis
 from app.services import chat as chat_service
+from app.services import tour as tour_service
 from app.services.analysis import build_repository_analysis
 from app.services.repo_ingestion import clone_remote_repository
 from app.store import store
@@ -71,6 +74,7 @@ def list_repositories(current: Dict = Depends(get_current_user)):
     status_code=status.HTTP_201_CREATED,
 )
 def analyze_repository(payload: RepositoryInput,
+                       background_tasks: BackgroundTasks,
                        current: Dict = Depends(get_current_user)):
     clone_url = _normalize_git_url(payload.url)
 
@@ -93,6 +97,12 @@ def analyze_repository(payload: RepositoryInput,
         raise HTTPException(status_code=400, detail=analyze_msg)
 
     store.save_analysis(repo_id, result, local_path=local_path, owner_id=current["id"])
+
+    # Pre-warm the Learn walkthroughs in the background so they're cached (free +
+    # instant) by the time the user opens the Learn tab. No-op without an AI key.
+    if ai_analysis.ai_available():
+        background_tasks.add_task(_prewarm_tours, repo_id)
+
     return result["repository"]
 
 
@@ -239,6 +249,96 @@ def ai_repo_report(repo_id: int, current: Dict = Depends(get_current_user)):
         raise HTTPException(status_code=502, detail=f"AI report failed: {exc}")
 
     return {"markdown": markdown, "model": ai_analysis._MODEL}
+
+
+@router.get("/repositories/{repo_id}/files/{file_id}/content", response_model=FileContent)
+def file_content(repo_id: int, file_id: int,
+                 current: Dict = Depends(get_current_user)):
+    """Raw source of a file, read from the repo's clone on disk (capped). Used by
+    the Learn page's inline code viewer."""
+    from pathlib import Path
+
+    _owned_or_404(repo_id, current)
+    detail = store.get_file(repo_id, file_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    text, truncated = "", False
+    repo_path = store.get_repo_path(repo_id)
+    if repo_path:
+        try:
+            text = (Path(repo_path) / detail["path"]).read_text(
+                encoding="utf-8", errors="ignore"
+            )
+        except Exception:
+            text = ""
+    max_chars = 60000
+    if len(text) > max_chars:
+        text, truncated = text[:max_chars], True
+
+    return {"path": detail["path"], "content": text, "truncated": truncated}
+
+
+@router.post("/repositories/{repo_id}/tour", response_model=RepoTour)
+def repo_tour(repo_id: int, kind: str = "code", refresh: bool = False,
+              current: Dict = Depends(get_current_user)):
+    """Build an educational walkthrough for a repo.
+
+    `kind` selects the lens: "code" (how the codebase works — architecture and
+    functions) or "debt" (the technical-debt tour).
+
+    An AI-authored tour is generated once and cached in Mongo, so repeat views
+    are free and instant; pass `refresh=true` to force regeneration. Selection +
+    metrics are deterministic (heuristic); when an AI key is configured Claude
+    authors richer prose grounded in the real source (generated=True). Any AI
+    failure falls back to the heuristic text so the page always works.
+    """
+    repo = _owned_or_404(repo_id, current)
+    if kind != "debt":
+        kind = "code"
+
+    if not refresh:
+        cached = store.get_tour(repo_id, kind)
+        if cached is not None:
+            return cached
+
+    return _generate_tour(repo, repo_id, kind)
+
+
+def _generate_tour(repo: Dict, repo_id: int, kind: str) -> Dict:
+    """Build a tour and, when an AI key is set, author + cache the rich version.
+    Only the AI version is cached (heuristic stays uncached so it upgrades once a
+    key is configured). AI failures fall back to the heuristic text."""
+    files = store.list_files(repo_id) or []
+    if kind == "debt":
+        coupling = store.list_coupling(repo_id) or []
+        tour = tour_service.build_heuristic_tour(repo, files, coupling)
+    else:
+        tour = tour_service.build_code_walkthrough(repo, files)
+
+    if ai_analysis.ai_available():
+        try:
+            tour = tour_service.enrich_with_ai(
+                tour, repo, store.get_repo_path(repo_id), kind=kind
+            )
+            store.save_tour(repo_id, kind, tour)
+        except Exception:
+            pass
+
+    return tour
+
+
+def _prewarm_tours(repo_id: int) -> None:
+    """Generate + cache both walkthroughs for a freshly analyzed repo, so the
+    Learn tab is instant later. Runs in a background task; never raises."""
+    repo = store.get_repository(repo_id)
+    if repo is None:
+        return
+    for kind in ("code", "debt"):
+        try:
+            _generate_tour(repo, repo_id, kind)
+        except Exception:
+            pass
 
 
 @router.get("/settings", response_model=UserSettings)

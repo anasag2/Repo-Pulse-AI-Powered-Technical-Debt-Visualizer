@@ -18,8 +18,16 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 
-# Default to the most capable model; allow an override for cost-sensitive runs.
-_MODEL = os.getenv("REPO_PULSE_AI_MODEL", "claude-opus-4-8")
+# Sonnet 4.6 is the sweet spot for these tasks (strong code understanding + prose
+# at ~2/5 the cost of Opus); override via REPO_PULSE_AI_MODEL (e.g. claude-opus-4-8
+# for the highest quality, or claude-haiku-4-5 — note: Haiku rejects the `effort`
+# param used in repo_report, so it needs a code tweak before use).
+# `or` (not getenv's default arg) so an empty env value — e.g. docker-compose
+# passing ${REPO_PULSE_AI_MODEL:-} when unset — still falls back to the default.
+_MODEL = os.getenv("REPO_PULSE_AI_MODEL") or "claude-sonnet-4-6"
+# Haiku rejects the `effort` param + adaptive thinking; detect it so the one call
+# that uses them (repo_report) can degrade gracefully and switching is safe.
+_IS_HAIKU = "haiku" in _MODEL.lower()
 # How much of a source file we send (chars). Keeps token usage bounded.
 _MAX_FILE_CHARS = 8000
 
@@ -135,12 +143,112 @@ def repo_report(repository: Dict, top_files: List[Dict],
         "Write the health report."
     )
 
+    # Haiku doesn't support adaptive thinking / effort; the bigger models do.
+    extra = {} if _IS_HAIKU else {
+        "thinking": {"type": "adaptive"},
+        "output_config": {"effort": "medium"},
+    }
     resp = _client().messages.create(
         model=_MODEL,
         max_tokens=4000,
-        thinking={"type": "adaptive"},
-        output_config={"effort": "medium"},
         system=_SYSTEM_REPORT,
         messages=[{"role": "user", "content": prompt}],
+        **extra,
     )
     return next((b.text for b in resp.content if b.type == "text"), "")
+
+
+# ─── Tour authoring (educational walkthrough) ─────────────────────────────────
+# The heuristic generator (services/tour.py) decides *which* files become stops
+# and computes their metrics. This authors the *prose* for those stops, grounded
+# in each file's real source — the "what" (role) and the "lesson".
+
+_TOUR_SNIPPET_CHARS = 4000  # smaller than analyze_file: we need orientation, not depth
+
+
+class AuthoredStop(BaseModel):
+    id: str
+    title: str    # short, vivid label (≤6 words)
+    role: str     # what THIS file does + how it connects, referencing real code
+    lesson: str   # the debt concept, anchored to this file's metrics
+
+
+class AuthoredTour(BaseModel):
+    summary: str
+    stops: List[AuthoredStop]
+
+
+_SYSTEM_TOUR = (
+    "You are writing an educational guided tour of a real repository for a developer "
+    "who is brand new to it. The goal: de-blackbox the codebase. You're given the "
+    "repo's totals and an ordered list of stops; each stop names a file, the debt "
+    "concept it illustrates, that file's metrics, and a source snippet.\n\n"
+    "For EVERY stop id you receive, write three fields:\n"
+    "- title: a short, vivid label (max 6 words), no file path.\n"
+    "- role: 2-3 sentences in plain English — what this file actually does and how it "
+    "connects to the rest of the app. Reference real functions/classes from the snippet.\n"
+    "- lesson: 2-3 sentences teaching the named debt concept, anchored to THIS file's "
+    "metrics (cite the real numbers). Teach, don't just describe.\n"
+    "Also write an overall 'summary' (2-3 sentences) orienting the newcomer. "
+    "Be concrete and specific; no marketing fluff. Keep each field under ~60 words. "
+    "Return all stop ids you were given."
+)
+
+
+_SYSTEM_TOUR_CODE = (
+    "You are giving a developer who is brand new to a codebase a guided tour of how it "
+    "WORKS — its architecture and what the code actually does — NOT a technical-debt "
+    "review. You're given the repo's totals and an ordered list of stops; each stop names "
+    "a file, the architectural role it plays, basic facts, and a source snippet.\n\n"
+    "For EVERY stop id you receive, write three fields:\n"
+    "- title: a short, vivid label (max 6 words), no file path.\n"
+    "- role: 2-4 sentences in plain English — what this file/module does and the key "
+    "functions or classes inside it (name the real ones from the snippet) and what each "
+    "is responsible for.\n"
+    "- lesson: 2-3 sentences on how this fits into the overall architecture — what it "
+    "depends on, what uses it, and where it sits in the control or data flow.\n"
+    "Also write an overall 'summary' (2-3 sentences) describing the app's architecture at "
+    "a high level. Be concrete and reference real code. Do NOT discuss churn, risk, "
+    "complexity scores, test coverage, or any other debt metrics — this tour is about "
+    "understanding the code. Keep each field under ~70 words. Return all stop ids."
+)
+
+
+def author_tour(repository: Dict, stops: List[Dict], repo_path: Optional[str],
+                kind: str = "debt") -> AuthoredTour:
+    """Author rich prose for an already-selected set of tour stops. `kind` selects the
+    lens: "code" (how it works) or "debt" (technical-debt review). Raises on API/auth
+    errors so the caller can fall back to the heuristic text."""
+    blocks: List[str] = []
+    for s in stops:
+        metrics = ", ".join(f"{m['label']}={m['value']}" for m in s.get("metrics", [])) or "n/a"
+        snippet = ""
+        if repo_path and s.get("path"):
+            snippet = _read_snippet(repo_path, s["path"])
+            if len(snippet) > _TOUR_SNIPPET_CHARS:
+                snippet = snippet[:_TOUR_SNIPPET_CHARS] + "\n... [truncated]"
+        blocks.append(
+            f"### stop id: {s['id']}\n"
+            f"concept: {s['concept']} — {s.get('conceptTitle', '')}\n"
+            f"file: {s.get('path') or '(repository overview — no single file)'}\n"
+            f"metrics: {metrics}\n"
+            f"source snippet:\n```\n{snippet or '(not applicable / source unavailable)'}\n```"
+        )
+
+    prompt = (
+        f"Repository: {repository['name']} ({repository.get('url', '')})\n"
+        f"Totals: {repository.get('totalFiles', 0)} files, "
+        f"{repository.get('linesOfCode', 0)} LOC, {repository.get('authors', 0)} authors, "
+        f"avg risk {repository.get('avgRiskScore', 0)}.\n\n"
+        f"Author the tour for these {len(stops)} stops:\n\n" + "\n\n".join(blocks)
+    )
+
+    resp = _client().messages.parse(
+        model=_MODEL,
+        max_tokens=3000,
+        thinking={"type": "disabled"},
+        system=_SYSTEM_TOUR_CODE if kind == "code" else _SYSTEM_TOUR,
+        messages=[{"role": "user", "content": prompt}],
+        output_format=AuthoredTour,
+    )
+    return resp.parsed_output

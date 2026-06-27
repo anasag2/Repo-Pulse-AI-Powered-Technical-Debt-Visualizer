@@ -4,8 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useListRepositories } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Studio from "@/pages/Studio";
+import Dashboard from "@/pages/Dashboard";
 import Repositories from "@/pages/Repositories";
+import Learn from "@/pages/Learn";
 import RepositoryView from "@/pages/RepositoryView";
 import Snapshots from "@/pages/Snapshots";
 import Compare from "@/pages/Compare";
@@ -16,18 +17,17 @@ import ResetPassword from "@/pages/ResetPassword";
 import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { AnalysisProvider } from "@/lib/analysis-context";
 import AnalysisOverlay from "@/components/AnalysisOverlay";
-import AvatarButton from "@/components/AvatarButton";
+import ProfileMenu from "@/components/ProfileMenu";
 import {
   LayoutDashboard,
   GitBranch,
+  BookOpen,
   Camera,
   GitCompare,
-  Settings2,
   Activity,
   Plus,
   ChevronsLeft,
   ChevronsRight,
-  LogOut,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,9 +37,9 @@ const queryClient = new QueryClient();
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/" },
   { label: "Repositories", icon: GitBranch, href: "/repositories" },
+  { label: "Learn", icon: BookOpen, href: "/learn" },
   { label: "Snapshots", icon: Camera, href: "/snapshots" },
   { label: "Compare", icon: GitCompare, href: "/compare" },
-  { label: "Settings", icon: Settings2, href: "/settings" },
 ];
 
 // Risk score → status-dot color (matches the visualization's risk palette)
@@ -67,7 +67,6 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const [, repoParams] = useRoute("/repositories/:id");
   const activeRepoId = repoParams?.id ? parseInt(repoParams.id) : null;
   const { data: repos } = useListRepositories();
-  const { user, logout } = useAuth();
   const recent = repos ? [...repos].reverse().slice(0, 6) : [];
 
   return (
@@ -192,29 +191,8 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         )}
       </div>
 
-      {/* Account */}
+      {/* Collapse toggle */}
       <div className="shrink-0 border-t border-sidebar-border">
-        {!collapsed && <SectionLabel>Account</SectionLabel>}
-        <div className={cn("flex items-center", collapsed ? "justify-center py-3" : "gap-2.5 px-3 py-2.5")}>
-          <AvatarButton size={28} className="shrink-0" />
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium text-sidebar-foreground truncate">{user?.name ?? "—"}</div>
-            </div>
-          )}
-          {!collapsed && (
-            <button
-              onClick={logout}
-              title="Log out"
-              className="text-sidebar-foreground/50 hover:text-red-400 p-1 rounded-md hover:bg-sidebar-accent transition-colors shrink-0"
-              data-testid="button-logout"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Collapse toggle */}
         <button
           onClick={onToggle}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -232,7 +210,19 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   );
 }
 
+// Current top-level section name, for the top-bar label.
+function sectionLabel(location: string): string {
+  if (location === "/") return "Dashboard";
+  if (location.startsWith("/repositories")) return "Repositories";
+  if (location.startsWith("/learn")) return "Learn";
+  if (location.startsWith("/snapshots")) return "Snapshots";
+  if (location.startsWith("/compare")) return "Compare";
+  if (location.startsWith("/settings")) return "Settings";
+  return "";
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("rp-sidebar-collapsed") === "1";
@@ -247,7 +237,13 @@ function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar collapsed={collapsed} onToggle={toggle} />
-      <main className="flex-1 overflow-hidden min-w-0">{children}</main>
+      <div className="flex flex-1 flex-col min-w-0">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-4">
+          <span className="text-[13px] font-semibold text-foreground/70">{sectionLabel(location)}</span>
+          <ProfileMenu />
+        </header>
+        <main className="flex-1 overflow-hidden min-w-0">{children}</main>
+      </div>
     </div>
   );
 }
@@ -255,9 +251,11 @@ function Layout({ children }: { children: React.ReactNode }) {
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Studio} />
+      <Route path="/" component={Dashboard} />
       <Route path="/repositories" component={Repositories} />
       <Route path="/repositories/:id" component={RepositoryView} />
+      <Route path="/learn" component={Learn} />
+      <Route path="/learn/:id" component={Learn} />
       <Route path="/snapshots" component={Snapshots} />
       <Route path="/compare" component={Compare} />
       <Route path="/settings" component={Settings} />

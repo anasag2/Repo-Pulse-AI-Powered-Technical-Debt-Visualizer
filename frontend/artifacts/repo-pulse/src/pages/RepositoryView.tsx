@@ -11,10 +11,11 @@ import {
 import type { FileNode } from "@workspace/api-client-react";
 import type { ColorMode } from "@/components/CityCanvas";
 import CouplingGraph from "@/components/CouplingGraph";
-import AvatarButton from "@/components/AvatarButton";
 import ChatDrawer from "@/components/ChatDrawer";
+import { motion, AnimatePresence } from "framer-motion";
 import { isCodeFile } from "@/lib/file-classify";
 import { cn } from "@/lib/utils";
+import { ease } from "@/lib/motion";
 
 type ViewMode = "3d" | "2d" | "coupling";
 import {
@@ -749,7 +750,6 @@ export default function RepositoryView() {
             <button title="Notifications" className="text-muted-foreground hover:text-foreground p-1 transition-colors">
               <Bell className="w-4 h-4" />
             </button>
-            <AvatarButton size={28} />
           </div>
         </div>
 
@@ -946,12 +946,21 @@ export default function RepositoryView() {
           </div>
         </div>
 
-        {/* Right panel */}
-        {selectedFile && (
-          <div className="w-72 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col">
-            <FilePanel repoId={repoId} fileId={selectedFile.id} repoUrl={repo.url} onClose={() => setSelectedFile(null)} />
-          </div>
-        )}
+        {/* Right panel — slides in when a file is selected */}
+        <AnimatePresence>
+          {selectedFile && (
+            <motion.div
+              key="file-panel"
+              initial={{ x: 40, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 40, opacity: 0 }}
+              transition={{ duration: 0.25, ease }}
+              className="w-72 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col"
+            >
+              <FilePanel repoId={repoId} fileId={selectedFile.id} repoUrl={repo.url} onClose={() => setSelectedFile(null)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <ChatDrawer

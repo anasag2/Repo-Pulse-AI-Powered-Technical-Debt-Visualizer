@@ -1,166 +1,172 @@
-import { useGetDashboardSummary, useListRepositories } from "@workspace/api-client-react";
 import { Link } from "wouter";
-import { FileText, AlertTriangle, Shield, TestTube, RefreshCw, ArrowRight, Circle } from "lucide-react";
+import { motion } from "framer-motion";
+import { useGetDashboardSummary, useListRepositories } from "@workspace/api-client-react";
+import {
+  BookOpen,
+  GitBranch,
+  GitCompare,
+  Camera,
+  ArrowRight,
+  FileText,
+  AlertTriangle,
+  Sparkles,
+  Lightbulb,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
+import { stagger, rise, pageEnter } from "@/lib/motion";
 
 function riskColor(score: number) {
-  if (score < 0.3) return "text-green-400";
-  if (score < 0.5) return "text-yellow-400";
-  if (score < 0.7) return "text-orange-400";
-  return "text-red-400";
-}
-
-function riskBg(score: number) {
-  if (score < 0.3) return "bg-green-400/10 border-green-400/20";
-  if (score < 0.5) return "bg-yellow-400/10 border-yellow-400/20";
-  if (score < 0.7) return "bg-orange-400/10 border-orange-400/20";
-  return "bg-red-400/10 border-red-400/20";
-}
-
-function statusDot(score: number) {
   if (score < 0.3) return "bg-green-400";
   if (score < 0.5) return "bg-yellow-400";
   if (score < 0.7) return "bg-orange-400";
   return "bg-red-400";
 }
 
+// Big navigation cards — the primary "where do I go" surface.
+const ACTIONS = [
+  {
+    href: "/learn",
+    icon: BookOpen,
+    title: "Learn a codebase",
+    desc: "Take an AI-guided walkthrough of how a repo works, or where its risk lives.",
+    accent: "text-emerald-400",
+    ring: "hover:border-emerald-400/40",
+  },
+  {
+    href: "/repositories",
+    icon: GitBranch,
+    title: "Repositories",
+    desc: "Browse your analyzed repos, or add a new one to map and explore.",
+    accent: "text-blue-400",
+    ring: "hover:border-blue-400/40",
+  },
+  {
+    href: "/compare",
+    icon: GitCompare,
+    title: "Compare",
+    desc: "Put two repositories side by side and contrast their health.",
+    accent: "text-violet-400",
+    ring: "hover:border-violet-400/40",
+  },
+  {
+    href: "/snapshots",
+    icon: Camera,
+    title: "Snapshots",
+    desc: "Track how a repository's health changes over time.",
+    accent: "text-amber-400",
+    ring: "hover:border-amber-400/40",
+  },
+] as const;
+
+const TIPS = [
+  "Add a repository under Repositories, then open Learn for an AI walkthrough of how it's built.",
+  "In Learn, switch between “How it works” and “Tech debt” to see the codebase from two angles.",
+  "Click any file in a walkthrough to read its source and ask the AI about it.",
+];
+
 export default function Dashboard() {
-  const { data: summary, isLoading: summaryLoading } = useGetDashboardSummary();
-  const { data: repos, isLoading: reposLoading } = useListRepositories();
+  const { user } = useAuth();
+  const { data: summary } = useGetDashboardSummary();
+  const { data: repos } = useListRepositories();
+  const recent = repos ? [...repos].reverse().slice(0, 5) : [];
+
+  const stats = [
+    { label: "Repositories", value: summary?.totalRepositories ?? 0, icon: GitBranch, color: "text-blue-400" },
+    { label: "Files analyzed", value: summary?.totalFiles ?? 0, icon: FileText, color: "text-emerald-400" },
+    { label: "High-risk files", value: summary?.totalHighRiskFiles ?? 0, icon: AlertTriangle, color: "text-red-400" },
+  ];
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Overview of your repositories and code health</p>
-      </div>
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {[
-          {
-            label: "Repositories",
-            value: summaryLoading ? "—" : String(summary?.totalRepositories ?? 0),
-            icon: FileText,
-            color: "text-blue-400",
-            bg: "bg-blue-400/10",
-          },
-          {
-            label: "Total Files",
-            value: summaryLoading ? "—" : (summary?.totalFiles ?? 0).toLocaleString(),
-            icon: FileText,
-            color: "text-slate-300",
-            bg: "bg-slate-400/10",
-          },
-          {
-            label: "High Risk Files",
-            value: summaryLoading ? "—" : String(summary?.totalHighRiskFiles ?? 0),
-            icon: AlertTriangle,
-            color: "text-red-400",
-            bg: "bg-red-400/10",
-          },
-          {
-            label: "Avg Risk Score",
-            value: summaryLoading ? "—" : String(summary?.avgRiskScore ?? 0),
-            icon: Shield,
-            color: riskColor(summary?.avgRiskScore ?? 0),
-            bg: riskBg(summary?.avgRiskScore ?? 0),
-          },
-        ].map((card) => (
-          <div
-            key={card.label}
-            className="bg-card border border-card-border rounded-lg p-4"
-            data-testid={`card-${card.label.toLowerCase().replace(/\s+/g, "-")}`}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs text-muted-foreground">{card.label}</span>
-              <div className={cn("p-1.5 rounded-md", card.bg)}>
-                <card.icon className={cn("w-3.5 h-3.5", card.color)} />
-              </div>
-            </div>
-            <div className={cn("text-2xl font-bold", card.color)}>{card.value}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Repositories list */}
-      <div className="bg-card border border-card-border rounded-lg">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-card-border">
-          <h2 className="text-sm font-semibold text-foreground">Recent Repositories</h2>
-          <Link href="/repositories">
-            <button className="text-xs text-primary hover:underline flex items-center gap-1" data-testid="link-view-all">
-              View all <ArrowRight className="w-3 h-3" />
-            </button>
-          </Link>
+    <motion.div {...pageEnter} className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-5xl p-6">
+        {/* Welcome */}
+        <div className="flex items-center gap-2 text-emerald-400">
+          <Sparkles className="h-5 w-5" />
+          <span className="text-xs font-semibold uppercase tracking-wider">Repo-Pulse</span>
         </div>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">
+          Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}.
+        </h1>
+        <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+          Repo-Pulse turns a repository into something you can actually understand — an AI walkthrough of
+          how the code works, and a clear view of where the technical debt and risk live. Pick a place to start.
+        </p>
 
-        {reposLoading ? (
-          <div className="p-8 text-center text-muted-foreground text-sm">Loading...</div>
-        ) : !repos || repos.length === 0 ? (
-          <div className="p-10 text-center">
-            <RefreshCw className="w-8 h-8 text-muted-foreground mx-auto mb-3 opacity-50" />
-            <p className="text-sm text-muted-foreground">No repositories yet</p>
-            <Link href="/repositories">
-              <button className="mt-3 text-xs text-primary hover:underline" data-testid="button-analyze-first">
-                Analyze your first repository
-              </button>
-            </Link>
-          </div>
-        ) : (
-          <div className="divide-y divide-card-border">
-            {repos.slice(-5).reverse().map((repo) => (
-              <Link key={repo.id} href={`/repositories/${repo.id}`}>
-                <div
-                  className="flex items-center justify-between px-4 py-3 hover:bg-muted/30 cursor-pointer transition-colors"
-                  data-testid={`repo-row-${repo.id}`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={cn("w-2 h-2 rounded-full shrink-0", statusDot(repo.avgRiskScore))} />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-foreground truncate">{repo.name}</div>
-                      <div className="text-xs text-muted-foreground truncate">{repo.url}</div>
-                    </div>
+        {/* Quick stats */}
+        <motion.div variants={stagger} initial="hidden" animate="show" className="mt-6 grid grid-cols-3 gap-3">
+          {stats.map((s) => (
+            <motion.div key={s.label} variants={rise} className="rounded-xl border border-border bg-card/40 p-4">
+              <s.icon className={cn("h-4 w-4", s.color)} />
+              <div className="mt-2 text-2xl font-bold text-foreground">{s.value}</div>
+              <div className="text-xs text-muted-foreground">{s.label}</div>
+            </motion.div>
+          ))}
+        </motion.div>
+
+        {/* Navigation cards */}
+        <motion.div variants={stagger} initial="hidden" animate="show" className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {ACTIONS.map((a) => (
+            <motion.div key={a.href} variants={rise} whileHover={{ y: -4 }} transition={{ type: "spring", stiffness: 300, damping: 24 }}>
+              <Link href={a.href}>
+                <div className={cn("group h-full cursor-pointer rounded-xl border border-border bg-card/40 p-5 transition-colors", a.ring)}>
+                  <div className="flex items-center justify-between">
+                    <a.icon className={cn("h-5 w-5", a.accent)} />
+                    <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                   </div>
-                  <div className="flex items-center gap-6 shrink-0 ml-4">
-                    <div className="text-right hidden sm:block">
-                      <div className="text-xs text-muted-foreground">Files</div>
-                      <div className="text-xs font-medium text-foreground">{repo.totalFiles.toLocaleString()}</div>
-                    </div>
-                    <div className="text-right hidden md:block">
-                      <div className="text-xs text-muted-foreground">Risk</div>
-                      <div className={cn("text-xs font-bold", riskColor(repo.avgRiskScore))}>{repo.avgRiskScore}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs text-muted-foreground">Analyzed</div>
-                      <div className="text-xs text-foreground">{repo.lastAnalyzed}</div>
-                    </div>
-                  </div>
+                  <div className="mt-3 font-semibold text-foreground">{a.title}</div>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{a.desc}</p>
                 </div>
               </Link>
-            ))}
-          </div>
-        )}
-      </div>
+            </motion.div>
+          ))}
+        </motion.div>
 
-      {/* Test Coverage card */}
-      {summary && (
-        <div className="mt-3 bg-card border border-card-border rounded-lg p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <TestTube className="w-4 h-4 text-green-400" />
-              <span className="text-sm font-medium text-foreground">Avg Test Coverage</span>
-            </div>
-            <span className="text-sm font-bold text-green-400">{summary.avgTestCoverage}%</span>
-          </div>
-          <div className="w-full bg-muted rounded-full h-1.5">
-            <div
-              className="bg-green-400 h-1.5 rounded-full transition-all"
-              style={{ width: `${summary.avgTestCoverage}%` }}
-            />
-          </div>
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Recent repositories */}
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.4 }} className="rounded-xl border border-border bg-card/30 p-4">
+            <h2 className="mb-3 text-sm font-semibold text-foreground">Recent repositories</h2>
+            {recent.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                No repositories yet.{" "}
+                <Link href="/repositories"><span className="cursor-pointer text-emerald-400 hover:underline">Add your first one →</span></Link>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {recent.map((r) => (
+                  <Link key={r.id} href={`/repositories/${r.id}`}>
+                    <div className="flex items-center gap-2.5 rounded-md px-2.5 py-2 transition-colors hover:bg-muted/60">
+                      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", riskColor(r.avgRiskScore))} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium text-foreground/90">{r.name}</span>
+                        <span className="block truncate text-[11px] text-muted-foreground">{r.totalFiles} files · {r.lastAnalyzed}</span>
+                      </span>
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Tips */}
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.4 }} className="rounded-xl border border-border bg-card/30 p-4">
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Lightbulb className="h-4 w-4 text-amber-400" /> Tips to get started
+            </h2>
+            <ul className="space-y-2.5">
+              {TIPS.map((tip, i) => (
+                <li key={i} className="flex gap-2.5 text-sm leading-relaxed text-muted-foreground">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-[11px] font-semibold text-emerald-400">
+                    {i + 1}
+                  </span>
+                  {tip}
+                </li>
+              ))}
+            </ul>
+          </motion.div>
         </div>
-      )}
-    </div>
+      </div>
+    </motion.div>
   );
 }

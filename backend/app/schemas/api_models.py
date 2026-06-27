@@ -179,6 +179,12 @@ class FileDetail(FileNode):
     recentCommits: List[Commit]
 
 
+class FileContent(BaseModel):
+    path: str
+    content: str
+    truncated: bool = False
+
+
 class DashboardSummary(BaseModel):
     totalRepositories: int
     totalFiles: int
@@ -216,3 +222,36 @@ class ChatModel(BaseModel):
 class ChatModelsResponse(BaseModel):
     models: List[ChatModel]
     hasAppKey: bool    # server has a default key → the free experience works without BYOK
+
+
+# ─── Learn / Tour (educational walkthrough) ───────────────────────────────────
+# A guided, hybrid walkthrough that de-blackboxes a repo for newcomers: each stop
+# explains *what* a file does AND teaches the debt concept it illustrates.
+
+class TourStopMetric(BaseModel):
+    label: str          # "Risk" | "Churn" | "Complexity" | ...
+    value: str          # display value, e.g. "low" or "42 commits"
+    tone: str = "neutral"   # "good" | "warn" | "bad" | "neutral" → drives the chip color
+
+
+class TourStop(BaseModel):
+    id: str                              # stable slug for this stop
+    fileId: Optional[int] = None         # FileNode this stop centers on (None for the overview)
+    path: Optional[str] = None           # convenience copy of the file path
+    title: str                           # human label, e.g. "The front door"
+    role: str                            # the "what": what this file does + how it connects
+    concept: str                         # lesson key: entrypoint|hotspot|coupling|complexity|stable|tests|overview
+    conceptTitle: str                    # e.g. "Hotspots: change × complexity"
+    lesson: str                          # the "lesson": the debt concept, anchored to this file
+    metrics: List[TourStopMetric] = []   # highlighted stats shown on the stop card
+    relatedFileIds: List[int] = []       # neighbors to highlight (e.g. coupling partners)
+
+
+class RepoTour(BaseModel):
+    repoId: int
+    kind: str = "code"       # "code" (how it works) | "debt" (technical-debt tour)
+    generated: bool          # True if AI-authored, False for the heuristic fallback
+    model: str               # model id that authored it, or "heuristic"
+    summary: str             # one-paragraph orientation for the whole repo
+    stops: List[TourStop]    # ordered walkthrough stops
+    debtOrder: List[str] = []  # (debt kind only) stop ids, worst-risk first

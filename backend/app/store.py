@@ -37,6 +37,7 @@ class RepoStore:
         self._users = db["users"]
         self._settings = db["user_settings"]
         self._resets = db["password_resets"]
+        self._tours = db["tours"]
         self._ensure_indexes()
 
     def _ensure_indexes(self) -> None:
@@ -51,6 +52,9 @@ class RepoStore:
             [("provider", ASCENDING), ("providerId", ASCENDING)], sparse=True
         )
         self._settings.create_index([("userId", ASCENDING)], unique=True)
+        self._tours.create_index(
+            [("repoId", ASCENDING), ("kind", ASCENDING)], unique=True
+        )
         self._resets.create_index([("tokenHash", ASCENDING)], unique=True)
         # TTL: Mongo auto-purges reset tokens once expiresAt passes.
         self._resets.create_index("expiresAt", expireAfterSeconds=0)
@@ -99,6 +103,8 @@ class RepoStore:
         self._files.delete_many({"repoId": repo_id})
         self._commits.delete_many({"repoId": repo_id})
         self._coupling.delete_many({"repoId": repo_id})
+        # Cached tours describe the old file set — drop them so they regenerate.
+        self._tours.delete_many({"repoId": repo_id})
 
         extras = payload.get("file_extras", {})
         files = payload["files"]
@@ -126,6 +132,7 @@ class RepoStore:
         self._files.delete_many({"repoId": repo_id})
         self._commits.delete_many({"repoId": repo_id})
         self._coupling.delete_many({"repoId": repo_id})
+        self._tours.delete_many({"repoId": repo_id})
         return repo.get("localPath")
 
     # -- reads -------------------------------------------------------------
@@ -166,6 +173,22 @@ class RepoStore:
     def get_repo_path(self, repo_id: int) -> Optional[str]:
         repo = self._repositories.find_one({"id": repo_id}, {"localPath": 1})
         return repo.get("localPath") if repo else None
+
+    # -- cached AI tours ---------------------------------------------------
+    def get_tour(self, repo_id: int, kind: str) -> Optional[Dict]:
+        """A previously generated tour (RepoTour dict), or None."""
+        return self._tours.find_one(
+            {"repoId": repo_id, "kind": kind}, {"_id": 0, "_cachedAt": 0}
+        )
+
+    def save_tour(self, repo_id: int, kind: str, tour: Dict) -> None:
+        """Cache an AI-authored tour so later views are free and instant."""
+        self._tours.replace_one(
+            {"repoId": repo_id, "kind": kind},
+            {**tour, "repoId": repo_id, "kind": kind,
+             "_cachedAt": datetime.now(timezone.utc)},
+            upsert=True,
+        )
 
     # -- users -------------------------------------------------------------
     def create_user(
