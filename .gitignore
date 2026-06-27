@@ -85,6 +85,11 @@ backend/workspaces/
 frontend/artifacts/repo-pulse/dist/
 
 ############################
+# Vite dependency cache (rebuilt on each dev/build run)
+############################
+**/node_modules/.vite/
+
+############################
 # Secrets (never commit)
 ############################
 *.key
