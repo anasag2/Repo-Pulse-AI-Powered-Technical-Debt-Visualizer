@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Html, Grid, RoundedBox } from "@react-three/drei";
+import { OrbitControls, Html, Grid, RoundedBox, Sparkles } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { FileNode } from "@workspace/api-client-react";
@@ -143,11 +143,11 @@ function layoutTree(
 
 function Building({
   file, colorBy, cx, cz, w, d, heightUnit, heightScale,
-  selected, hovered, bevel, animationProgress, onPointerOver, onPointerOut, onClick,
+  selected, hovered, bevel, animationProgress, pulse, onPointerOver, onPointerOut, onClick,
 }: {
   file: FileNode; colorBy: ColorMode;
   cx: number; cz: number; w: number; d: number; heightUnit: number; heightScale: number;
-  selected: boolean; hovered: boolean; bevel: boolean; animationProgress: number;
+  selected: boolean; hovered: boolean; bevel: boolean; animationProgress: number; pulse: boolean;
   onPointerOver: () => void; onPointerOut: () => void; onClick: () => void;
 }) {
   const t = metricT(file, colorBy);
@@ -157,9 +157,18 @@ function Building({
   const height = Math.max(0.18, (0.22 + churnT) * heightUnit * (1 + file.riskScore * 0.6)) * animationProgress;
 
   // A gentle base self-glow gives every building some life; it ramps up for hot
-  // files, and selection/hover add a controlled highlight. No per-frame work —
-  // this updates only on hover/selection change.
+  // files, and selection/hover add a controlled highlight.
   const emissive = 0.14 + Math.max(0, t - 0.45) * 0.85 + (selected ? 0.9 : hovered ? 0.5 : 0);
+
+  // Hotspots get a slow "heartbeat" on their glow — the on-brand Repo-Pulse beat,
+  // kept subtle. Only hot buildings do per-frame work (see `pulse` from the scene).
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
+  const phase = (file.id % 97) * 0.37;
+  useFrame(({ clock }) => {
+    const m = matRef.current;
+    if (!m || !pulse) return;
+    m.emissiveIntensity = emissive + Math.max(0, Math.sin(clock.elapsedTime * 1.8 + phase)) * 0.7;
+  });
 
   const fw = Math.max(0.05, w * 0.84);
   const fd = Math.max(0.05, d * 0.84);
@@ -175,6 +184,7 @@ function Building({
   };
   const material = (
     <meshStandardMaterial
+      ref={matRef}
       color={color}
       emissive={color}
       emissiveIntensity={emissive}
@@ -186,6 +196,78 @@ function Building({
   return bevel
     ? <RoundedBox {...common} args={args} radius={0.04} smoothness={2}>{material}</RoundedBox>
     : <mesh {...common}><boxGeometry args={args} />{material}</mesh>;
+}
+
+// ─── Atmosphere (prototype) ──────────────────────────────────────────────────
+
+// Vertical gradient backdrop so the sky isn't an empty void — deep navy up top,
+// a touch warmer/lighter toward the horizon (where the fog + skyline sit).
+function GradientSky() {
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+        uniforms: {
+          top: { value: new THREE.Color("#0a1322") },
+          horizon: { value: new THREE.Color("#16273d") },
+          glow: { value: new THREE.Color("#27557f") },
+        },
+        vertexShader:
+          "varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+        fragmentShader:
+          "varying vec3 vDir; uniform vec3 top; uniform vec3 horizon; uniform vec3 glow; void main(){ float h = vDir.y; float t = clamp(h * 0.5 + 0.5, 0.0, 1.0); vec3 base = mix(horizon, top, pow(t, 0.85)); float band = exp(-pow((h - 0.015) / 0.05, 2.0)); gl_FragColor = vec4(base + glow * band, 1.0); }",
+      }),
+    [],
+  );
+  return (
+    <mesh material={material} frustumCulled={false}>
+      <sphereGeometry args={[900, 32, 16]} />
+    </mesh>
+  );
+}
+
+// Dense concentric bands of distant skyscraper silhouettes on the horizon, so the
+// code city sits inside a larger metropolis instead of an endless plane. Static
+// and cheap; the scene fog hazes them in. A fraction are "lit" (warm windows) so
+// the horizon reads as a living city at night.
+function DistantSkyline({ side }: { side: number }) {
+  const boxes = useMemo(() => {
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const arr: { pos: [number, number, number]; size: [number, number, number]; lit: number }[] = [];
+    // near → far: a low dense "inner ridge" of outskirts just past the code city,
+    // rising to a taller downtown and the far horizon skyline. Radii are × side.
+    const bands = [
+      { rad: 0.95, count: 54, hMin: 1.2, hMax: 5 },
+      { rad: 1.20, count: 66, hMin: 2, hMax: 9 },
+      { rad: 1.55, count: 84, hMin: 3, hMax: 15 },
+      { rad: 1.95, count: 104, hMin: 4, hMax: 19 },
+    ];
+    for (const b of bands) {
+      for (let i = 0; i < b.count; i++) {
+        const ang = (i / b.count) * Math.PI * 2 + rnd() * ((Math.PI * 2) / b.count);
+        const r = side * b.rad * (0.96 + rnd() * 0.09);
+        const h = b.hMin + rnd() * (b.hMax - b.hMin);
+        const w = 0.9 + rnd() * 2.0;
+        const lit = rnd() < 0.15 ? 0.45 + rnd() * 0.55 : 0.1; // a few windows lit
+        arr.push({ pos: [Math.cos(ang) * r, h / 2, Math.sin(ang) * r], size: [w, h, w * (0.7 + rnd() * 0.6)], lit });
+      }
+    }
+    return arr;
+  }, [side]);
+
+  return (
+    <group>
+      {boxes.map((b, i) => (
+        <mesh key={i} position={b.pos}>
+          <boxGeometry args={b.size} />
+          <meshStandardMaterial color="#0a1019" emissive="#d9b06a" emissiveIntensity={b.lit} roughness={1} metalness={0} />
+        </mesh>
+      ))}
+    </group>
+  );
 }
 
 // ─── Scene ───────────────────────────────────────────────────────────────────
@@ -228,6 +310,9 @@ function CityScene({
   return (
     <>
       <color attach="background" args={["#0a0f17"]} />
+      <GradientSky />
+      {/* Haze the grid/buildings/skyline into the horizon instead of hard black */}
+      <fog attach="fog" args={["#16273d", side * 1.2, side * 3.0]} />
 
       <hemisphereLight args={["#cfe0ff", "#0a0f17", 0.75]} />
       <directionalLight
@@ -261,6 +346,9 @@ function CityScene({
         fadeDistance={side * 2.2}
         fadeStrength={1.4}
       />
+
+      {/* Distant skyline: dense outskirts → downtown → horizon */}
+      <DistantSkyline side={side} />
 
       {/* Folder plates (subtle, depth-tinted) */}
       {folders.map((f, i) => {
@@ -300,11 +388,15 @@ function CityScene({
           hovered={hoveredId === file.id}
           bevel={bevel}
           animationProgress={anim}
+          pulse={!heavy && metricT(file, colorBy) > 0.72}
           onPointerOver={() => setHoveredId(file.id)}
           onPointerOut={() => setHoveredId(null)}
           onClick={() => onFileClick(file)}
         />
       ))}
+
+      {/* Faint drifting particles — a touch of ambient life over the city */}
+      <Sparkles count={50} scale={[side * 1.6, 9, side * 1.6]} position={[0, 4.5, 0]} size={3} speed={0.25} opacity={0.35} color="#9fc4e8" />
 
       <OrbitControls
         makeDefault
