@@ -36,6 +36,8 @@ def get_recent_commits(repo_path: str, limit: int = 30) -> Tuple[bool, str, List
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
 
@@ -70,6 +72,8 @@ def get_tracked_files(repo_path: str) -> Tuple[bool, str, List[str]]:
             ["git", "-C", repo_path, "ls-files"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True
         )
 
@@ -93,6 +97,8 @@ def get_file_churn(repo_path: str) -> Tuple[bool, str, dict]:
             ["git", "-C", repo_path, "log", "--name-only", "--pretty=format:"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True
         )
 
@@ -127,6 +133,8 @@ def get_file_ownership(repo_path: str) -> Tuple[bool, str, Dict[str, Dict]]:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True
         )
 
@@ -205,6 +213,8 @@ def get_file_commit_stats(repo_path: str) -> Tuple[bool, str, Dict[str, Dict]]:
             ["git", "-C", repo_path, "log", "--name-only", f"--pretty=format:{pretty}"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
     except subprocess.CalledProcessError as e:
@@ -271,6 +281,8 @@ def get_temporal_coupling(
             ["git", "-C", repo_path, "log", "--name-only", "--pretty=format:__C__"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
     except subprocess.CalledProcessError as e:
