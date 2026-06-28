@@ -28,6 +28,8 @@ import {
   Plus,
   ChevronsLeft,
   ChevronsRight,
+  HelpCircle,
+  Bell,
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -240,7 +242,16 @@ function Layout({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-col min-w-0">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-4">
           <span className="text-[13px] font-semibold text-foreground/70">{sectionLabel(location)}</span>
-          <ProfileMenu />
+          <div className="flex items-center gap-0.5">
+            <button title="Help" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground">
+              <HelpCircle className="h-4 w-4" />
+            </button>
+            <button title="Notifications" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground">
+              <Bell className="h-4 w-4" />
+            </button>
+            <div className="mx-2 h-5 w-px bg-sidebar-border" />
+            <ProfileMenu />
+          </div>
         </header>
         <main className="flex-1 overflow-hidden min-w-0">{children}</main>
       </div>

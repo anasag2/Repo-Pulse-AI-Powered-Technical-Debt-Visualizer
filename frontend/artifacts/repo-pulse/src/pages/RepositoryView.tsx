@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, Component } from "react";
+import { useState, useRef, useMemo, useEffect, Component } from "react";
 import { useParams } from "wouter";
 import {
   useGetRepository,
@@ -30,10 +30,7 @@ import {
   Box,
   Folder,
   Search,
-  HelpCircle,
-  Bell,
   Clock,
-  ChevronDown,
   ChevronRight,
   Gauge,
   ExternalLink,
@@ -43,6 +40,9 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getToken } from "@/lib/auth";
+import { useToast } from "@/hooks/use-toast";
 
 // ─── Color helpers ───────────────────────────────────────────────────────────
 
@@ -647,6 +647,31 @@ export default function RepositoryView() {
   const [codeOnly, setCodeOnly] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [refreshing, setRefreshing] = useState(false);
+
+  // 5-minute refresh cooldown (also enforced server-side). Persisted per repo so
+  // it survives reloads/navigation; a 1s ticker updates the countdown.
+  const REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+  const cooldownKey = `rp-refresh-${repoId}`;
+  const [cooldownUntil, setCooldownUntil] = useState<number>(() => {
+    try { return Number(localStorage.getItem(cooldownKey)) || 0; } catch { return 0; }
+  });
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (cooldownUntil <= Date.now()) return;
+    const id = setInterval(() => {
+      setTick((t) => t + 1);
+      if (Date.now() >= cooldownUntil) clearInterval(id);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [cooldownUntil]);
+  const cooldownLeft = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+  const startCooldown = (ms: number) => {
+    const until = Date.now() + ms;
+    setCooldownUntil(until);
+    try { localStorage.setItem(cooldownKey, String(until)); } catch { /* ignore */ }
+  };
 
   const { data: repo, isLoading: repoLoading } = useGetRepository(repoId, {
     query: { queryKey: getGetRepositoryQueryKey(repoId) },
@@ -679,9 +704,40 @@ export default function RepositoryView() {
     if (hit) setSelectedFile(hit);
   };
 
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: getGetRepositoryQueryKey(repoId) });
-    queryClient.invalidateQueries({ queryKey: getListFilesQueryKey(repoId) });
+  // Refresh = pull only the new commits into the existing clone and recompute,
+  // then refetch everything (analysis + cached tours regenerate server-side).
+  const refresh = async () => {
+    if (refreshing || cooldownLeft > 0) return;
+    setRefreshing(true);
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/repositories/${repoId}/reanalyze`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.status === 429) {
+        // Server cooldown — sync our timer to its Retry-After.
+        const retry = parseInt(res.headers.get("Retry-After") || "", 10);
+        startCooldown((Number.isFinite(retry) && retry > 0 ? retry : 300) * 1000);
+        let detail = "Just refreshed — please wait a bit.";
+        try { detail = (await res.json()).detail ?? detail; } catch { /* ignore */ }
+        toast({ title: "Refreshing too soon", description: detail });
+        return;
+      }
+      if (!res.ok) {
+        let detail = `Refresh failed (${res.status})`;
+        try { detail = (await res.json()).detail ?? detail; } catch { /* ignore */ }
+        toast({ title: "Refresh failed", description: detail, variant: "destructive" });
+        return;
+      }
+      startCooldown(REFRESH_COOLDOWN_MS);
+      queryClient.invalidateQueries(); // re-pull analysis, commits, coupling, tours
+      toast({ title: "Refreshed", description: "Pulled the latest commits and recomputed the analysis." });
+    } catch {
+      toast({ title: "Refresh failed", description: "Couldn't reach the server.", variant: "destructive" });
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   if (repoLoading || filesLoading) {
@@ -726,8 +782,18 @@ export default function RepositoryView() {
               <Clock className="w-3.5 h-3.5" />
               <span>Last analyzed {repo.lastAnalyzed}</span>
             </div>
-            <button onClick={refresh} title="Re-fetch analysis" className="text-muted-foreground hover:text-foreground p-1 transition-colors" data-testid="button-refresh">
-              <RefreshCw className="w-3.5 h-3.5" />
+            <button
+              onClick={refresh}
+              disabled={refreshing || cooldownLeft > 0}
+              title={
+                cooldownLeft > 0
+                  ? `Refresh available in ${Math.floor(cooldownLeft / 60)}m ${cooldownLeft % 60}s`
+                  : "Pull the latest commits and re-analyze"
+              }
+              className="text-muted-foreground hover:text-foreground p-1 transition-colors disabled:opacity-40 disabled:hover:text-muted-foreground"
+              data-testid="button-refresh"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
             </button>
             <button
               onClick={() => setChatOpen((v) => !v)}
@@ -742,13 +808,6 @@ export default function RepositoryView() {
             >
               <MessageSquare className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Ask AI</span>
-            </button>
-            <div className="h-5 w-px bg-border" />
-            <button title="Help" className="text-muted-foreground hover:text-foreground p-1 transition-colors">
-              <HelpCircle className="w-4 h-4" />
-            </button>
-            <button title="Notifications" className="text-muted-foreground hover:text-foreground p-1 transition-colors">
-              <Bell className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -789,40 +848,40 @@ export default function RepositoryView() {
           </button>
 
           {/* View */}
-          <label className="flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-muted/40 text-xs">
+          <div className="flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-muted/40 text-xs">
             <span className="text-muted-foreground hidden lg:inline">View</span>
-            <div className="relative flex items-center">
-              <select
-                value={viewMode}
-                onChange={(e) => setViewMode(e.target.value as ViewMode)}
-                className="appearance-none bg-transparent pr-4 text-foreground focus:outline-none cursor-pointer"
+            <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+              <SelectTrigger
+                className="h-6 w-auto gap-1 border-0 bg-transparent px-0 text-xs text-foreground shadow-none focus:ring-0"
                 data-testid="select-view-mode"
               >
-                <option value="3d">3D City</option>
-                <option value="2d">2D Map</option>
-                <option value="coupling">Coupling</option>
-              </select>
-              <ChevronDown className="w-3 h-3 text-muted-foreground absolute right-0 pointer-events-none" />
-            </div>
-          </label>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="3d">3D City</SelectItem>
+                <SelectItem value="2d">2D Map</SelectItem>
+                <SelectItem value="coupling">Coupling</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Color by */}
-          <label className="flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-muted/40 text-xs">
+          <div className="flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-muted/40 text-xs">
             <span className="text-muted-foreground hidden lg:inline">Color by</span>
-            <div className="relative flex items-center">
-              <select
-                value={colorBy}
-                onChange={(e) => setColorBy(e.target.value as ColorMode)}
-                className="appearance-none bg-transparent pr-4 text-foreground focus:outline-none cursor-pointer"
+            <Select value={colorBy} onValueChange={(v) => setColorBy(v as ColorMode)}>
+              <SelectTrigger
+                className="h-6 w-auto gap-1 border-0 bg-transparent px-0 text-xs text-foreground shadow-none focus:ring-0"
                 data-testid="select-color-by"
               >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
                 {COLOR_BY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                 ))}
-              </select>
-              <ChevronDown className="w-3 h-3 text-muted-foreground absolute right-0 pointer-events-none" />
-            </div>
-          </label>
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Risk legend */}
           <div className="ml-auto flex items-center gap-2 shrink-0">
