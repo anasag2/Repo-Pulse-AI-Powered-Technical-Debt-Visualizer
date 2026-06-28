@@ -255,3 +255,4 @@ class RepoTour(BaseModel):
     summary: str             # one-paragraph orientation for the whole repo
     stops: List[TourStop]    # ordered walkthrough stops
     debtOrder: List[str] = []  # (debt kind only) stop ids, worst-risk first
+
