@@ -15,6 +15,7 @@ Collections:
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -93,6 +94,7 @@ class RepoStore:
                       local_path: Optional[str] = None,
                       owner_id: Optional[int] = None) -> None:
         repository = dict(payload["repository"])
+        repository["analyzedAt"] = datetime.now(timezone.utc)  # for the refresh cooldown
         if local_path:
             repository["localPath"] = local_path
         if owner_id is not None:
@@ -172,7 +174,14 @@ class RepoStore:
 
     def get_repo_path(self, repo_id: int) -> Optional[str]:
         repo = self._repositories.find_one({"id": repo_id}, {"localPath": 1})
-        return repo.get("localPath") if repo else None
+        path = repo.get("localPath") if repo else None
+        # Touch the clone so LRU eviction treats reads (code viewer, AI) as "use".
+        if path and os.path.isdir(path):
+            try:
+                os.utime(path, None)
+            except OSError:
+                pass
+        return path
 
     # -- cached AI tours ---------------------------------------------------
     def get_tour(self, repo_id: int, kind: str) -> Optional[Dict]:

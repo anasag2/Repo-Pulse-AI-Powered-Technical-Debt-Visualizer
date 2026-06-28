@@ -7,7 +7,9 @@ an in-memory store (app/store.py).
 """
 from __future__ import annotations
 
+import os
 import shutil
+from datetime import datetime, timezone
 from typing import Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
@@ -34,12 +36,19 @@ from app.schemas.api_models import (
 )
 from app.services import ai_analysis
 from app.services import chat as chat_service
+from app.services import repo_ingestion
 from app.services import tour as tour_service
 from app.services.analysis import build_repository_analysis
 from app.services.repo_ingestion import clone_remote_repository
 from app.store import store
 
 router = APIRouter(prefix="/api", tags=["api"])
+
+# Delete clones not used within this many days (best-effort, opportunistic).
+_CLONE_TTL_DAYS = float(os.getenv("REPO_PULSE_CLONE_TTL_DAYS", "7"))
+# Minimum gap between refreshes of the same repo (anti-spam; refreshing more
+# often is pointless and costs a fetch + recompute + AI tour regeneration).
+_REANALYZE_COOLDOWN_S = float(os.getenv("REPO_PULSE_REFRESH_COOLDOWN_S", "300"))
 
 
 def _owned_or_404(repo_id: int, user: Dict) -> Dict:
@@ -102,6 +111,59 @@ def analyze_repository(payload: RepositoryInput,
     # instant) by the time the user opens the Learn tab. No-op without an AI key.
     if ai_analysis.ai_available():
         background_tasks.add_task(_prewarm_tours, repo_id)
+    # Opportunistic housekeeping: drop clones nobody has used in a while.
+    background_tasks.add_task(repo_ingestion.evict_stale_clones, _CLONE_TTL_DAYS)
+
+    return result["repository"]
+
+
+@router.post("/repositories/{repo_id}/reanalyze", response_model=Repository)
+def reanalyze_repository(repo_id: int, background_tasks: BackgroundTasks,
+                         current: Dict = Depends(get_current_user)):
+    """Refresh a repo: fetch only the new commits into the existing shallow clone
+    (re-cloning if it was evicted), recompute the analysis, and replace it. Cached
+    tours are invalidated by save_analysis, so the Learn tab regenerates."""
+    repo = _owned_or_404(repo_id, current)
+
+    # Cooldown: block refreshes that come too soon after the last analysis.
+    analyzed_at = repo.get("analyzedAt")
+    if analyzed_at is not None:
+        if analyzed_at.tzinfo is None:
+            analyzed_at = analyzed_at.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - analyzed_at).total_seconds()
+        if elapsed < _REANALYZE_COOLDOWN_S:
+            retry = int(_REANALYZE_COOLDOWN_S - elapsed) + 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"Just refreshed — try again in about {retry // 60}m {retry % 60}s.",
+                headers={"Retry-After": str(retry)},
+            )
+
+    clone_url = _normalize_git_url(repo["url"])
+
+    ok, message, path = repo_ingestion.update_remote_repository(
+        store.get_repo_path(repo_id), clone_url
+    )
+    if not ok or not path:
+        raise HTTPException(status_code=400, detail=message)
+
+    success, analyze_msg, result = build_repository_analysis(
+        repo_path=path,
+        name=repo["name"],
+        url=repo["url"],
+        is_public=bool(repo.get("isPublic", True)),
+        repo_id=repo_id,
+        next_file_id=store.peek_file_id(),
+        next_commit_id=store.peek_commit_id(),
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail=analyze_msg)
+
+    store.save_analysis(repo_id, result, local_path=path, owner_id=current["id"])
+
+    if ai_analysis.ai_available():
+        background_tasks.add_task(_prewarm_tours, repo_id)
+    background_tasks.add_task(repo_ingestion.evict_stale_clones, _CLONE_TTL_DAYS)
 
     return result["repository"]
 
