@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import {
   History as HistoryIcon, GitCommit, ArrowLeft, Loader2, Folder, FolderOpen, FileCode2,
-  ChevronRight, ChevronDown, FolderTree, Code2,
+  ChevronRight, ChevronDown, FolderTree, Code2, Search,
 } from "lucide-react";
 import { useListRepositories, useListFiles, getListFilesQueryKey } from "@workspace/api-client-react";
 import type { FileNode } from "@workspace/api-client-react";
@@ -124,10 +124,11 @@ function buildTree(files: FileNode[]): TreeNode {
   return root;
 }
 
-function FileTreeNode({ node, depth, selectedPath, onSelect }: {
-  node: TreeNode; depth: number; selectedPath: string | null; onSelect: (p: string) => void;
+function FileTreeNode({ node, depth, selectedPath, onSelect, forceOpen }: {
+  node: TreeNode; depth: number; selectedPath: string | null; onSelect: (p: string) => void; forceOpen: boolean;
 }) {
   const [open, setOpen] = useState(depth < 1);
+  const isOpen = forceOpen || open;
   if (node.isDir) {
     return (
       <div>
@@ -136,12 +137,12 @@ function FileTreeNode({ node, depth, selectedPath, onSelect }: {
           style={{ paddingLeft: depth * 10 + 4 }}
           className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
         >
-          {open ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
-          {open ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400/80" /> : <Folder className="h-3.5 w-3.5 shrink-0 text-amber-400/80" />}
+          {isOpen ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+          {isOpen ? <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400/80" /> : <Folder className="h-3.5 w-3.5 shrink-0 text-amber-400/80" />}
           <span className="truncate">{node.name}</span>
         </button>
-        {open && node.children.map((c) => (
-          <FileTreeNode key={c.path} node={c} depth={depth + 1} selectedPath={selectedPath} onSelect={onSelect} />
+        {isOpen && node.children.map((c) => (
+          <FileTreeNode key={c.path} node={c} depth={depth + 1} selectedPath={selectedPath} onSelect={onSelect} forceOpen={forceOpen} />
         ))}
       </div>
     );
@@ -165,18 +166,30 @@ function FileTreeNode({ node, depth, selectedPath, onSelect }: {
 export default function History() {
   const { data: repos } = useListRepositories();
   const list = repos ?? [];
-  const [picked, setPicked] = useState<number | null>(null);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // Deep link: the 3D map links here as /history?repo=<id>&path=<file> so a
+  // building's "View history" opens straight to that file's trends.
+  const initial = new URLSearchParams(window.location.search);
+  const [picked, setPicked] = useState<number | null>(() => {
+    const p = initial.get("repo");
+    return p ? parseInt(p, 10) : null;
+  });
+  const [selectedPath, setSelectedPath] = useState<string | null>(() => initial.get("path"));
   const [codeOnly, setCodeOnly] = useState(true);
+  const [fileSearch, setFileSearch] = useState("");
   const repo = list.find((r) => r.id === picked) ?? null;
 
   const { data: files } = useListFiles(picked ?? 0, {
     query: { queryKey: getListFilesQueryKey(picked ?? 0), enabled: picked != null },
   });
   const tree = useMemo(() => {
-    const fs = (files ?? []).filter((f) => f.isDirectory || (codeOnly ? isCodeFile(f) : true));
+    const q = fileSearch.trim().toLowerCase();
+    const fs = (files ?? []).filter((f) =>
+      !f.isDirectory
+      && (codeOnly ? isCodeFile(f) : true)
+      && (q ? f.path.toLowerCase().includes(q) : true),
+    );
     return buildTree(fs);
-  }, [files, codeOnly]);
+  }, [files, codeOnly, fileSearch]);
 
   const { data: activity, isLoading, isError } = useActivity(picked, selectedPath);
   const data = useMemo(() => (activity ?? []).map((p) => ({ ...p, label: fmtMonth(p.month) })), [activity]);
@@ -241,6 +254,17 @@ export default function History() {
                     <Code2 className="h-3 w-3" /> Code only
                   </button>
                 </div>
+                <div className="relative mb-2 px-1">
+                  <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={fileSearch}
+                    onChange={(e) => setFileSearch(e.target.value)}
+                    type="search"
+                    placeholder="Search files…"
+                    className="w-full rounded-md border border-border bg-card/50 py-1.5 pl-8 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-emerald-400/40"
+                    data-testid="input-file-search"
+                  />
+                </div>
                 <button
                   onClick={() => setSelectedPath(null)}
                   className={cn(
@@ -253,10 +277,12 @@ export default function History() {
                 {!files ? (
                   <div className="px-2 py-3 text-xs text-muted-foreground">Loading files…</div>
                 ) : tree.children.length === 0 ? (
-                  <div className="px-2 py-3 text-xs text-muted-foreground">No files.</div>
+                  <div className="px-2 py-3 text-xs text-muted-foreground">
+                    {fileSearch.trim() ? `No files match “${fileSearch}”.` : "No files."}
+                  </div>
                 ) : (
                   tree.children.map((c) => (
-                    <FileTreeNode key={c.path} node={c} depth={0} selectedPath={selectedPath} onSelect={setSelectedPath} />
+                    <FileTreeNode key={c.path} node={c} depth={0} selectedPath={selectedPath} onSelect={setSelectedPath} forceOpen={fileSearch.trim().length > 0} />
                   ))
                 )}
               </aside>

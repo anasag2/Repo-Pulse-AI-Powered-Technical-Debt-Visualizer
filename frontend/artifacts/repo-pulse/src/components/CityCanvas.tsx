@@ -400,6 +400,9 @@ function CityScene({
 
       <OrbitControls
         makeDefault
+        // Lock the camera while the city builds in — interacting mid-animation is
+        // janky; it unlocks (smooth) once the grow-in finishes.
+        enabled={anim >= 1}
         enableDamping
         dampingFactor={0.08}
         minDistance={4}
