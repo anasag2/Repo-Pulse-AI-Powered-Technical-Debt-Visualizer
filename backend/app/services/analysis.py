@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from app.services.git_mining import (
     get_basic_repository_metrics,
@@ -70,6 +70,7 @@ def build_repository_analysis(
     repo_id: int,
     next_file_id: int,
     next_commit_id: int,
+    existing_path_to_id: Optional[Dict[str, int]] = None,
 ) -> Tuple[bool, str, Dict]:
     """
     Run the full analysis for a single repository.
@@ -118,6 +119,9 @@ def build_repository_analysis(
     all_authors = set()
     path_to_id: Dict[str, int] = {}
 
+    # Reuse ids for paths that already existed (refresh) so file ids stay stable
+    # across reanalysis — otherwise open panels / links to old ids break.
+    existing = existing_path_to_id or {}
     fid = next_file_id
     for m in metrics:
         path = m["path"]
@@ -141,8 +145,12 @@ def build_repository_analysis(
         norm_churn = churn / max_churn if max_churn else 0
         hotspot = round(norm_complexity * norm_churn, 2)
 
+        node_id = existing.get(path)
+        if node_id is None:
+            node_id = fid
+            fid += 1
         node = {
-            "id": fid,
+            "id": node_id,
             "repoId": repo_id,
             "name": os.path.basename(path) or path,
             "path": path,
@@ -161,7 +169,7 @@ def build_repository_analysis(
             "functionCount": function_count,
         }
         files.append(node)
-        path_to_id[path] = fid
+        path_to_id[path] = node_id
 
         risk_factors = [
             {"name": "High Churn",
@@ -177,11 +185,10 @@ def build_repository_analysis(
             {"name": "Low Test Coverage",
              "score": round((100 - coverage) / 100 * 0.3, 2)},
         ]
-        file_extras[fid] = {
+        file_extras[node_id] = {
             "riskFactors": [rf for rf in risk_factors if rf["score"] > 0],
             "recentCommits": recent_commits,
         }
-        fid += 1
 
     # ---- Directory nodes (aggregated from their descendant files) --------
     dir_paths = set()
@@ -198,8 +205,12 @@ def build_repository_analysis(
         avg_risk = round(sum(c["riskScore"] for c in children) / len(children), 2)
         avg_cov = round(sum(c["testCoverage"] for c in children) / len(children))
         avg_hotspot = round(sum(c["hotspotScore"] for c in children) / len(children), 2)
+        dir_id = existing.get(dpath)
+        if dir_id is None:
+            dir_id = fid
+            fid += 1
         dir_node = {
-            "id": fid,
+            "id": dir_id,
             "repoId": repo_id,
             "name": os.path.basename(dpath) or dpath,
             "path": dpath,
@@ -218,8 +229,7 @@ def build_repository_analysis(
             "functionCount": sum(c["functionCount"] for c in children),
         }
         files.append(dir_node)
-        file_extras[fid] = {"riskFactors": [], "recentCommits": recent_commits}
-        fid += 1
+        file_extras[dir_id] = {"riskFactors": [], "recentCommits": recent_commits}
 
     # ---- Repository aggregate --------------------------------------------
     file_only = [f for f in files if not f["isDirectory"]]

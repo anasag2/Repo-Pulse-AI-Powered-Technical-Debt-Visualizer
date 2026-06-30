@@ -157,6 +157,7 @@ def reanalyze_repository(repo_id: int, background_tasks: BackgroundTasks,
         repo_id=repo_id,
         next_file_id=store.peek_file_id(),
         next_commit_id=store.peek_commit_id(),
+        existing_path_to_id=store.get_file_id_map(repo_id),  # keep file ids stable
     )
     if not success:
         raise HTTPException(status_code=400, detail=analyze_msg)

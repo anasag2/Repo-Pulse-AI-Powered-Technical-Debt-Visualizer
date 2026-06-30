@@ -162,6 +162,13 @@ class RepoStore:
             {"repoId": repo_id, "id": file_id}, {"_id": 0}
         )
 
+    def get_file_id_map(self, repo_id: int) -> Dict[str, int]:
+        """Current {path: id} for a repo's files — lets reanalysis keep ids stable."""
+        return {
+            f["path"]: f["id"]
+            for f in self._files.find({"repoId": repo_id}, {"_id": 0, "path": 1, "id": 1})
+        }
+
     def list_commits(self, repo_id: int) -> Optional[List[Dict]]:
         if not self._repo_exists(repo_id):
             return None
