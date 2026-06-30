@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useRoute, useLocation } from "wouter";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { useListRepositories } from "@workspace/api-client-react";
 import {
@@ -15,7 +15,6 @@ import {
   ArrowRight,
   Sparkles,
   Map as MapIcon,
-  GitBranch,
   ChevronRight,
   Loader2,
   AlertTriangle,
@@ -31,6 +30,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTour, useRegenerateTour, useFileContent } from "@/lib/learn-api";
+import RepoCardGrid from "@/components/RepoCardGrid";
 import type { ConceptKind, MetricTone, RepoTour, TourKind, TourStop } from "@/lib/learn-types";
 
 // ─── Concept theming ─────────────────────────────────────────────────────────
@@ -487,6 +487,7 @@ function LearnRepo({ repoId }: { repoId: number }) {
 // ─── Learn home: pick a repo to learn ────────────────────────────────────────
 function LearnHome() {
   const { data: repos } = useListRepositories();
+  const [, navigate] = useLocation();
 
   return (
     <div className="mx-auto max-w-5xl p-6">
@@ -505,32 +506,9 @@ function LearnHome() {
         </p>
       </motion.div>
 
-      <motion.div variants={stagger} initial="hidden" animate="show" className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {(repos ?? []).map((r) => (
-          <motion.div key={r.id} variants={rise} whileHover={{ y: -4 }} transition={{ type: "spring", stiffness: 300, damping: 24 }}>
-            <Link href={`/learn/${r.id}`}>
-              <div className="group cursor-pointer rounded-xl border border-border bg-card/40 p-4 transition-colors hover:border-emerald-400/40">
-                <div className="flex items-center gap-2">
-                  <GitBranch className="h-4 w-4 text-emerald-400" />
-                  <span className="truncate font-semibold text-foreground">{r.name}</span>
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{r.totalFiles} files</span>
-                  <span className="inline-flex items-center gap-1 text-emerald-400 opacity-0 transition-opacity group-hover:opacity-100">
-                    Start tour <ArrowRight className="h-3.5 w-3.5" />
-                  </span>
-                </div>
-              </div>
-            </Link>
-          </motion.div>
-        ))}
-
-        {(!repos || repos.length === 0) && (
-          <motion.div variants={rise} className="col-span-full rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            No repositories yet. Analyze one first, then come back to learn it.
-          </motion.div>
-        )}
-      </motion.div>
+      <div className="mt-8">
+        <RepoCardGrid repos={repos ?? []} actionLabel="Start tour" onPick={(id) => navigate(`/learn/${id}`)} />
+      </div>
     </div>
   );
 }
