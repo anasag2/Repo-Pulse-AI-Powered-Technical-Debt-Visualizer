@@ -2,7 +2,7 @@ import re
 import subprocess
 import time
 from itertools import combinations
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from app.services.file_metrics import build_basic_file_metrics
 
 # Field separator used inside the git log pretty-format. ASCII unit separator
@@ -14,6 +14,58 @@ _BUGFIX_RE = re.compile(
     r"\b(fix|fixes|fixed|bug|bugfix|hotfix|patch|revert|regression|defect|broken|crash)\b",
     re.IGNORECASE,
 )
+
+
+def get_commit_activity(repo_path: str, path: Optional[str] = None) -> Tuple[bool, str, List[Dict]]:
+    """Aggregate history into a monthly time-series for the "over time" view:
+    commits, lines added/removed, and distinct contributors per month. When `path`
+    is given, the series is restricted to commits touching that file. Cheap — one
+    `git log` pass, no checkouts. Bounded by the shallow clone depth."""
+    args = ["git", "-C", repo_path, "log", "--no-merges", "--date=format:%Y-%m",
+            "--pretty=format:%x00%ad%x00%an", "--numstat"]
+    if path:
+        # `--` makes `path` a pathspec, so it can't be mistaken for an option.
+        args += ["--", path]
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            check=True, timeout=120,
+        )
+    except subprocess.CalledProcessError as e:
+        return False, f"git log failed: {e.stderr.strip()}", []
+    except subprocess.TimeoutExpired:
+        return False, "git log timed out", []
+
+    buckets: Dict[str, Dict] = {}
+    cur: Dict = None  # type: ignore[assignment]
+    for line in result.stdout.split("\n"):
+        if line.startswith("\x00"):
+            parts = line.split("\x00")  # ['', 'YYYY-MM', 'author']
+            month = parts[1] if len(parts) > 1 else ""
+            author = parts[2] if len(parts) > 2 else ""
+            if not month:
+                cur = None  # type: ignore[assignment]
+                continue
+            cur = buckets.setdefault(
+                month, {"commits": 0, "additions": 0, "deletions": 0, "authors": set()}
+            )
+            cur["commits"] += 1
+            if author:
+                cur["authors"].add(author)
+        elif line.strip() and cur is not None:
+            cols = line.split("\t")
+            if len(cols) >= 2:
+                if cols[0].isdigit():
+                    cur["additions"] += int(cols[0])
+                if cols[1].isdigit():
+                    cur["deletions"] += int(cols[1])
+
+    series = [
+        {"month": m, "commits": b["commits"], "additions": b["additions"],
+         "deletions": b["deletions"], "authors": len(b["authors"])}
+        for m, b in sorted(buckets.items())
+    ]
+    return True, "ok", series
 
 
 def get_recent_commits(repo_path: str, limit: int = 30) -> Tuple[bool, str, List[Dict]]:

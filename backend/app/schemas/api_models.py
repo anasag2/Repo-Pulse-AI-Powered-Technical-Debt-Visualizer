@@ -185,6 +185,14 @@ class FileContent(BaseModel):
     truncated: bool = False
 
 
+class ActivityPoint(BaseModel):
+    month: str          # "YYYY-MM"
+    commits: int
+    additions: int
+    deletions: int
+    authors: int
+
+
 class DashboardSummary(BaseModel):
     totalRepositories: int
     totalFiles: int

@@ -10,12 +10,13 @@ from __future__ import annotations
 import os
 import shutil
 from datetime import datetime, timezone
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 
 from app.api.auth_routes import get_current_user
 from app.schemas.api_models import (
+    ActivityPoint,
     AIFileInsight,
     AIReport,
     AIStatus,
@@ -36,6 +37,7 @@ from app.schemas.api_models import (
 )
 from app.services import ai_analysis
 from app.services import chat as chat_service
+from app.services import git_mining
 from app.services import repo_ingestion
 from app.services import tour as tour_service
 from app.services.analysis import build_repository_analysis
@@ -211,6 +213,20 @@ def list_commits(repo_id: int, current: Dict = Depends(get_current_user)):
 def list_coupling(repo_id: int, current: Dict = Depends(get_current_user)):
     _owned_or_404(repo_id, current)
     return store.list_coupling(repo_id) or []
+
+
+@router.get("/repositories/{repo_id}/activity", response_model=List[ActivityPoint])
+def repo_activity(repo_id: int, path: Optional[str] = None,
+                  current: Dict = Depends(get_current_user)):
+    """Monthly commit/churn/contributor time-series from the clone's git history,
+    for the 'over time' view. With `path`, restricts to one file. Empty if the
+    clone was evicted (refresh to reload)."""
+    _owned_or_404(repo_id, current)
+    repo_path = store.get_repo_path(repo_id)
+    if not repo_path or not os.path.isdir(repo_path):
+        return []
+    ok, _msg, series = git_mining.get_commit_activity(repo_path, path)
+    return series if ok else []
 
 
 @router.get("/ai/status", response_model=AIStatus)
