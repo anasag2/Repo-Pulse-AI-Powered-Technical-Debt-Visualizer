@@ -4,7 +4,7 @@ import { useGetDashboardSummary, useListRepositories } from "@workspace/api-clie
 import {
   BookOpen,
   GitBranch,
-  GitCompare,
+  History,
   Camera,
   ArrowRight,
   FileText,
@@ -42,10 +42,10 @@ const ACTIONS = [
     ring: "hover:border-blue-400/40",
   },
   {
-    href: "/compare",
-    icon: GitCompare,
-    title: "Compare",
-    desc: "Put two repositories side by side and contrast their health.",
+    href: "/history",
+    icon: History,
+    title: "History",
+    desc: "See how a repository's activity and churn have changed over time.",
     accent: "text-violet-400",
     ring: "hover:border-violet-400/40",
   },

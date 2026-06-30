@@ -9,7 +9,7 @@ import Repositories from "@/pages/Repositories";
 import Learn from "@/pages/Learn";
 import RepositoryView from "@/pages/RepositoryView";
 import Snapshots from "@/pages/Snapshots";
-import Compare from "@/pages/Compare";
+import HistoryPage from "@/pages/History";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
@@ -23,7 +23,7 @@ import {
   GitBranch,
   BookOpen,
   Camera,
-  GitCompare,
+  History,
   Activity,
   Plus,
   ChevronsLeft,
@@ -41,7 +41,7 @@ const navItems = [
   { label: "Repositories", icon: GitBranch, href: "/repositories" },
   { label: "Learn", icon: BookOpen, href: "/learn" },
   { label: "Snapshots", icon: Camera, href: "/snapshots" },
-  { label: "Compare", icon: GitCompare, href: "/compare" },
+  { label: "History", icon: History, href: "/history" },
 ];
 
 // Risk score → status-dot color (matches the visualization's risk palette)
@@ -218,7 +218,7 @@ function sectionLabel(location: string): string {
   if (location.startsWith("/repositories")) return "Repositories";
   if (location.startsWith("/learn")) return "Learn";
   if (location.startsWith("/snapshots")) return "Snapshots";
-  if (location.startsWith("/compare")) return "Compare";
+  if (location.startsWith("/history")) return "History";
   if (location.startsWith("/settings")) return "Settings";
   return "";
 }
@@ -268,7 +268,7 @@ function Router() {
       <Route path="/learn" component={Learn} />
       <Route path="/learn/:id" component={Learn} />
       <Route path="/snapshots" component={Snapshots} />
-      <Route path="/compare" component={Compare} />
+      <Route path="/history" component={HistoryPage} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
