@@ -10,6 +10,7 @@ import Learn from "@/pages/Learn";
 import RepositoryView from "@/pages/RepositoryView";
 import Snapshots from "@/pages/Snapshots";
 import HistoryPage from "@/pages/History";
+import Findings from "@/pages/Findings";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/Login";
@@ -24,6 +25,7 @@ import {
   BookOpen,
   Camera,
   History,
+  Flame,
   Activity,
   Plus,
   ChevronsLeft,
@@ -42,6 +44,7 @@ const queryClient = new QueryClient();
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/" },
   { label: "Repositories", icon: GitBranch, href: "/repositories" },
+  { label: "Findings", icon: Flame, href: "/findings" },
   { label: "History", icon: History, href: "/history" },
   { label: "Snapshots", icon: Camera, href: "/snapshots" },
   { label: "Learn", icon: BookOpen, href: "/learn" },
@@ -264,6 +267,7 @@ function sectionLabel(location: string): string {
   if (location.startsWith("/learn")) return "Learn";
   if (location.startsWith("/snapshots")) return "Snapshots";
   if (location.startsWith("/history")) return "History";
+  if (location.startsWith("/findings")) return "Findings";
   if (location.startsWith("/settings")) return "Settings";
   return "";
 }
@@ -314,6 +318,7 @@ function Router() {
       <Route path="/learn/:id" component={Learn} />
       <Route path="/snapshots" component={Snapshots} />
       <Route path="/history" component={HistoryPage} />
+      <Route path="/findings" component={Findings} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

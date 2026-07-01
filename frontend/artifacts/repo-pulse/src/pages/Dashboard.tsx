@@ -6,6 +6,7 @@ import {
   GitBranch,
   History,
   Camera,
+  Flame,
   ArrowRight,
   FileText,
   AlertTriangle,
@@ -40,6 +41,14 @@ const ACTIONS = [
     desc: "Browse your analyzed repos, or add a new one to map and explore.",
     accent: "text-blue-400",
     ring: "hover:border-blue-400/40",
+  },
+  {
+    href: "/findings",
+    icon: Flame,
+    title: "Findings",
+    desc: "The files with the most technical debt — why, and concrete fixes.",
+    accent: "text-red-400",
+    ring: "hover:border-red-400/40",
   },
   {
     href: "/history",
