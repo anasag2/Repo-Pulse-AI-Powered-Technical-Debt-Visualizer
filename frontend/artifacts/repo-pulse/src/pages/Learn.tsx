@@ -29,6 +29,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePersistedState } from "@/lib/use-persisted-state";
 import { useTour, useRegenerateTour, useFileContent } from "@/lib/learn-api";
 import RepoCardGrid from "@/components/RepoCardGrid";
 import type { ConceptKind, MetricTone, RepoTour, TourKind, TourStop } from "@/lib/learn-types";
@@ -204,7 +205,7 @@ function StopDetail({ stop, repoId, kind }: { stop: TourStop; repoId: number; ki
 // ─── Tour mode (linear walkthrough) ──────────────────────────────────────────
 function TourMode({ tour, repoId, kind }: { tour: RepoTour; repoId: number; kind: TourKind }) {
   const ordered = tour.stops;
-  const [currentId, setCurrentId] = useState(ordered[0]?.id);
+  const [currentId, setCurrentId] = usePersistedState(`learn-${repoId}-${kind}-stop`, ordered[0]?.id);
 
   const index = Math.max(0, ordered.findIndex((s) => s.id === currentId));
   const stop = ordered[index] ?? ordered[0];
@@ -301,7 +302,7 @@ function TourMode({ tour, repoId, kind }: { tour: RepoTour; repoId: number; kind
 // ─── Explore mode ────────────────────────────────────────────────────────────
 function ExploreMode({ tour, repoId, kind }: { tour: RepoTour; repoId: number; kind: TourKind }) {
   const files = useMemo(() => tour.stops.filter((s) => s.fileId != null), [tour]);
-  const [selectedId, setSelectedId] = useState(files[0]?.id ?? null);
+  const [selectedId, setSelectedId] = usePersistedState(`learn-${repoId}-${kind}-selected`, files[0]?.id ?? null);
   const selected = files.find((s) => s.id === selectedId) ?? files[0];
 
   return (
@@ -363,7 +364,7 @@ type Mode = "code" | "debt" | "explore";
 function LearnRepo({ repoId }: { repoId: number }) {
   const { data: repos } = useListRepositories();
   const repo = repos?.find((r) => r.id === repoId);
-  const [mode, setMode] = useState<Mode>("code");
+  const [mode, setMode] = usePersistedState<Mode>(`learn-${repoId}-mode`, "code");
   // Explore reuses the code walkthrough's files.
   const tourKind: TourKind = mode === "debt" ? "debt" : "code";
   const { data: tour, isLoading, isError, error } = useTour(repoId, tourKind);
