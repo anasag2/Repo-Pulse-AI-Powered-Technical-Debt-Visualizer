@@ -20,6 +20,7 @@ from app.schemas.api_models import (
     AIFileInsight,
     AIReport,
     AIStatus,
+    Finding,
     ChatInput,
     ChatModelsResponse,
     ChatResponse,
@@ -37,6 +38,7 @@ from app.schemas.api_models import (
 )
 from app.services import ai_analysis
 from app.services import chat as chat_service
+from app.services import findings as findings_service
 from app.services import git_mining
 from app.services import repo_ingestion
 from app.services import tour as tour_service
@@ -214,6 +216,16 @@ def list_commits(repo_id: int, current: Dict = Depends(get_current_user)):
 def list_coupling(repo_id: int, current: Dict = Depends(get_current_user)):
     _owned_or_404(repo_id, current)
     return store.list_coupling(repo_id) or []
+
+
+@router.get("/repositories/{repo_id}/findings", response_model=List[Finding])
+def repo_findings(repo_id: int, current: Dict = Depends(get_current_user)):
+    """Ranked, explained technical-debt findings for a repo (top files by TD,
+    the signals that flagged them, and a concrete recommendation)."""
+    _owned_or_404(repo_id, current)
+    files = store.list_files(repo_id) or []
+    coupling = store.list_coupling(repo_id) or []
+    return findings_service.build_findings(files, coupling)
 
 
 @router.get("/repositories/{repo_id}/activity", response_model=List[ActivityPoint])

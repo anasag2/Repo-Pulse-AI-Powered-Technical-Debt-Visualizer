@@ -68,6 +68,8 @@ class FileNode(BaseModel):
     ageDays: int = 0
     todoMarkers: int = 0
     functionCount: int = 0
+    cognitiveComplexity: int = 0
+    duplicatedBlocks: int = 0
 
 
 class RiskFactor(BaseModel):
@@ -191,6 +193,23 @@ class ActivityPoint(BaseModel):
     additions: int
     deletions: int
     authors: int
+
+
+class FindingFactor(BaseModel):
+    label: str          # e.g. "Cyclomatic complexity"
+    detail: str         # e.g. "47 (top 5% in this repo)"
+
+
+class Finding(BaseModel):
+    fileId: int
+    path: str
+    name: str
+    tdScore: float          # the file's technical-debt score (0–1)
+    category: str           # "Hotspot" | "God Class" | "Duplication" | ...
+    severity: str           # "high" | "medium" | "low"
+    factors: List[FindingFactor]
+    recommendation: str
+    relatedPaths: List[str] = []   # e.g. coupling partners
 
 
 class DashboardSummary(BaseModel):

@@ -234,6 +234,8 @@ def build_repository_analysis(
             "ageDays": age_days,
             "todoMarkers": todo_markers,
             "functionCount": function_count,
+            "cognitiveComplexity": m.get("cognitive_complexity", 0),
+            "duplicatedBlocks": dup_by_path.get(path, 0),
         }
         files.append(node)
         path_to_id[path] = node_id
@@ -294,6 +296,8 @@ def build_repository_analysis(
             "ageDays": min((c["ageDays"] for c in children), default=0),
             "todoMarkers": sum(c["todoMarkers"] for c in children),
             "functionCount": sum(c["functionCount"] for c in children),
+            "cognitiveComplexity": sum(c.get("cognitiveComplexity", 0) for c in children),
+            "duplicatedBlocks": sum(c.get("duplicatedBlocks", 0) for c in children),
         }
         files.append(dir_node)
         file_extras[dir_id] = {"riskFactors": [], "recentCommits": recent_commits}
