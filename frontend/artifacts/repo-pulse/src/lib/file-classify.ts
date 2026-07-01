@@ -24,9 +24,33 @@ const CODE_BASENAMES = new Set([
   "dockerfile", "makefile", "rakefile", "gemfile", "cmakelists.txt", "vagrantfile",
 ]);
 
-/** Whether a file is a programming/source file worth showing on the map. */
+// Vendored / generated / build dirs and generated/minified file suffixes — kept
+// in sync with the backend's file_classify.is_excluded so the map's "Code only"
+// view matches exactly what the technical-debt model scores.
+const EXCLUDED_DIRS = new Set([
+  "node_modules", "bower_components", "jspm_packages",
+  "vendor", "third_party", "third-party", "godeps",
+  "dist", "build", "out", "target", ".next", ".nuxt", ".svelte-kit", ".cache",
+  "migrations", "generated", "__generated__",
+  "coverage", ".venv", "venv", "site-packages", ".tox", ".eggs",
+]);
+const EXCLUDED_SUFFIXES = [
+  ".min.js", ".min.css", ".min.mjs", ".bundle.js", ".bundle.css",
+  "_pb2.py", "_pb2_grpc.py", ".pb.go", ".pb.cc", ".pb.h", ".g.dart", ".d.ts",
+];
+
+function isExcludedPath(path: string): boolean {
+  const segments = path.replace(/\\/g, "/").split("/");
+  if (segments.slice(0, -1).some((s) => EXCLUDED_DIRS.has(s.toLowerCase()))) return true;
+  const name = (segments[segments.length - 1] ?? "").toLowerCase();
+  return EXCLUDED_SUFFIXES.some((s) => name.endsWith(s)) || name.includes(".generated.");
+}
+
+/** Whether a file is the team's authored source (worth showing/scoring) —
+ *  excludes vendored, generated, build, and minified files. */
 export function isCodeFile(file: FileNode): boolean {
   if (file.isDirectory) return false;
+  if (isExcludedPath(file.path)) return false;
   const name = file.name.toLowerCase();
   if (CODE_BASENAMES.has(name)) return true;
   const dot = name.lastIndexOf(".");
