@@ -20,6 +20,7 @@ from app.services.git_mining import (
     get_temporal_coupling,
 )
 from app.services.duplication import compute_duplication
+from app.services.file_classify import is_analyzable
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -175,7 +176,10 @@ def build_repository_analysis(
     # Duplicated blocks per file (repo-wide near-duplicate detection).
     dup_by_path = compute_duplication(repo_path, [m["path"] for m in metrics])
     # Per-repo min–max bounds so each metric normalises to [0,1] before weighting.
-    _td_all = [_td_raw_inputs(m, coupling_by_path, dup_by_path) for m in metrics]
+    # Computed over CODE files only — configs/docs/lockfiles would otherwise skew
+    # the bounds (a generated lockfile inflating the LOC/churn maxima, etc.).
+    _td_all = [_td_raw_inputs(m, coupling_by_path, dup_by_path)
+               for m in metrics if is_analyzable(m["path"])]
     td_bounds: Dict[str, Tuple[float, float]] = {}
     for _key, _w, _p, _s in _TD_MODEL:
         _vals = [r[_key] for r in _td_all] or [0.0]
@@ -203,7 +207,12 @@ def build_repository_analysis(
         authors = ownership.get("contributors_count", 0)
         all_authors.update((ownership.get("contributors") or {}).keys())
 
-        risk = _technical_debt(_td_raw_inputs(m, coupling_by_path, dup_by_path), td_bounds)
+        # Only code files get a technical-debt score; configs/docs/data score 0
+        # (still stored + shown on the map, just not part of the debt analysis).
+        if is_analyzable(path):
+            risk = _technical_debt(_td_raw_inputs(m, coupling_by_path, dup_by_path), td_bounds)
+        else:
+            risk = 0.0
         coverage = _estimate_coverage(risk, path)
 
         # Hotspot: the canonical debt signal — code that is both complex AND
@@ -306,14 +315,13 @@ def build_repository_analysis(
     file_only = [f for f in files if not f["isDirectory"]]
     total_files = len(file_only)
     lines_of_code = sum(f["linesOfCode"] for f in file_only)
-    risky_files = sum(1 for f in file_only if f["riskScore"] > 0.6)
-    risky_pct = round(risky_files / total_files * 100, 1) if total_files else 0.0
-    avg_risk = round(
-        sum(f["riskScore"] for f in file_only) / total_files, 2
-    ) if total_files else 0.0
-    avg_cov = round(
-        sum(f["testCoverage"] for f in file_only) / total_files
-    ) if total_files else 0
+    # Debt aggregates are over code files only (TD isn't scored for non-code).
+    code_only = [f for f in file_only if is_analyzable(f["path"])]
+    n_code = len(code_only)
+    risky_files = sum(1 for f in code_only if f["riskScore"] > 0.6)
+    risky_pct = round(risky_files / n_code * 100, 1) if n_code else 0.0
+    avg_risk = round(sum(f["riskScore"] for f in code_only) / n_code, 2) if n_code else 0.0
+    avg_cov = round(sum(f["testCoverage"] for f in code_only) / n_code) if n_code else 0
 
     repository = {
         "id": repo_id,
