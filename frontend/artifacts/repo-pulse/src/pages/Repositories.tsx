@@ -4,12 +4,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Plus, Trash2, ExternalLink, FileText, Clock } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatLastAnalyzed } from "@/lib/utils";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
 import { useDeleteRepository } from "@workspace/api-client-react";
 import { useAnalysis } from "@/lib/analysis-context";
 import { pageEnter, stagger, rise, ease } from "@/lib/motion";
+import { usePersistedState } from "@/lib/use-persisted-state";
 
 function riskLabel(score: number) {
   if (score < 0.3) return "Low";
@@ -26,7 +27,7 @@ function riskBadgeClass(score: number) {
 }
 
 export default function Repositories() {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistedState("repositories-search", "");
   const [showForm, setShowForm] = useState(false);
   const { data: repos, isLoading } = useListRepositories();
   const deleteRepo = useDeleteRepository();
@@ -201,7 +202,7 @@ export default function Repositories() {
                     <td className="px-3 py-3 text-right text-xs text-muted-foreground hidden md:table-cell">
                       <div className="flex items-center justify-end gap-1">
                         <Clock className="w-3 h-3" />
-                        {repo.lastAnalyzed}
+                        {formatLastAnalyzed(repo.lastAnalyzed)}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-right">
