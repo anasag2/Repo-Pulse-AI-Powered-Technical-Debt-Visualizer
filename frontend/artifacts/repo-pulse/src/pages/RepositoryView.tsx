@@ -14,7 +14,8 @@ import CouplingGraph from "@/components/CouplingGraph";
 import ChatDrawer from "@/components/ChatDrawer";
 import { motion, AnimatePresence } from "framer-motion";
 import { isCodeFile } from "@/lib/file-classify";
-import { cn } from "@/lib/utils";
+import { cn, formatLastAnalyzed } from "@/lib/utils";
+import { usePersistedState } from "@/lib/use-persisted-state";
 import { ease } from "@/lib/motion";
 
 type ViewMode = "3d" | "2d" | "coupling";
@@ -38,6 +39,7 @@ import {
   Sparkles,
   FileCode2,
   MessageSquare,
+  Camera,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -438,13 +440,21 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
             <div className={cn("mt-1 inline-flex text-[10px] font-medium px-1.5 py-0.5 rounded-full border", riskBadge(file.riskScore))}>
               {riskLabel(file.riskScore)}
             </div>
-            <div className="mt-2.5">
+            <div className="mt-2.5 flex flex-wrap gap-2">
               <Link href={`/history?repo=${repoId}&path=${encodeURIComponent(file.path)}`}>
                 <button
                   className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-1.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/25"
                   data-testid="button-file-history"
                 >
                   <History className="h-3.5 w-3.5" /> History charts
+                </button>
+              </Link>
+              <Link href="/snapshots">
+                <button
+                  className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/15 px-2.5 py-1.5 text-xs font-medium text-amber-300 transition-colors hover:bg-amber-500/25"
+                  data-testid="button-file-snapshots"
+                >
+                  <Camera className="h-3.5 w-3.5" /> What's the risk?
                 </button>
               </Link>
             </div>
@@ -651,11 +661,15 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
 export default function RepositoryView() {
   const { id } = useParams<{ id: string }>();
   const repoId = parseInt(id ?? "0");
-  const [selectedFile, setSelectedFile] = useState<FileNode | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("3d");
-  const [colorBy, setColorBy] = useState<ColorMode>("risk");
-  const [search, setSearch] = useState("");
-  const [codeOnly, setCodeOnly] = useState(true);
+  // Persisted per repo so leaving this page (e.g. to History) and coming
+  // back restores the same file, view, and filters instead of resetting.
+  const [selectedFileId, setSelectedFileId] = usePersistedState<number | null>(`repoview-${repoId}-selectedFileId`, null);
+  const [viewMode, setViewMode] = usePersistedState<ViewMode>(`repoview-${repoId}-viewMode`, "3d");
+  const [colorBy, setColorBy] = usePersistedState<ColorMode>(`repoview-${repoId}-colorBy`, "risk");
+  const [search, setSearch] = usePersistedState(`repoview-${repoId}-search`, "");
+  const [codeOnly, setCodeOnly] = usePersistedState(`repoview-${repoId}-codeOnly`, true);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchActiveIndex, setSearchActiveIndex] = useState(0);
   const [chatOpen, setChatOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -691,6 +705,12 @@ export default function RepositoryView() {
     query: { queryKey: getListFilesQueryKey(repoId) },
   });
 
+  const selectedFile = useMemo(
+    () => files?.find((f) => f.id === selectedFileId) ?? null,
+    [files, selectedFileId],
+  );
+  const setSelectedFile = (f: FileNode | null) => setSelectedFileId(f?.id ?? null);
+
   // Hide config/data/docs/lockfiles/assets by default — only programming files
   // make it onto the map unless "Code only" is turned off. (Directories pass
   // through; the visualizations skip them anyway.)
@@ -707,12 +727,23 @@ export default function RepositoryView() {
     [files],
   );
 
-  // Search jumps to the first file whose name/path matches.
-  const runSearch = () => {
+  // Suggestions shown under the search box as the user types — matched by name/path.
+  const searchMatches = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q || !files) return;
-    const hit = files.find((f) => !f.isDirectory && (f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q)));
-    if (hit) setSelectedFile(hit);
+    if (!q || !files) return [];
+    return files
+      .filter((f) => !f.isDirectory && f.name.toLowerCase().startsWith(q))
+      .slice(0, 8);
+  }, [search, files]);
+
+  useEffect(() => {
+    setSearchActiveIndex(0);
+  }, [search]);
+
+  const selectSearchMatch = (f: FileNode) => {
+    setSelectedFile(f);
+    setSearch(f.name);
+    setSearchOpen(false);
   };
 
   // Refresh = pull only the new commits into the existing clone and recompute,
@@ -791,7 +822,7 @@ export default function RepositoryView() {
           <div className="ml-auto flex items-center gap-3 shrink-0">
             <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Clock className="w-3.5 h-3.5" />
-              <span>Last analyzed {repo.lastAnalyzed}</span>
+              <span>Last analyzed {formatLastAnalyzed(repo.lastAnalyzed)}</span>
             </div>
             <button
               onClick={refresh}
@@ -830,14 +861,51 @@ export default function RepositoryView() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
+              onChange={(e) => { setSearch(e.target.value); setSearchOpen(true); }}
+              onFocus={() => setSearchOpen(true)}
+              onBlur={() => setTimeout(() => setSearchOpen(false), 100)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSearchActiveIndex((i) => Math.min(i + 1, searchMatches.length - 1));
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSearchActiveIndex((i) => Math.max(i - 1, 0));
+                } else if (e.key === "Enter") {
+                  const hit = searchMatches[searchActiveIndex];
+                  if (hit) selectSearchMatch(hit);
+                } else if (e.key === "Escape") {
+                  setSearchOpen(false);
+                }
+              }}
               type="search"
               placeholder="Search files..."
               className="w-full h-8 bg-muted/40 border border-border rounded-md pl-8 pr-9 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               data-testid="input-search-files"
             />
             <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground border border-border rounded px-1 py-0.5 bg-background/60">⌘K</kbd>
+
+            {searchOpen && searchMatches.length > 0 && (
+              <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-30 max-h-64 overflow-auto rounded-md border border-border bg-popover shadow-lg">
+                {searchMatches.map((f, i) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); selectSearchMatch(f); }}
+                    onMouseEnter={() => setSearchActiveIndex(i)}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs",
+                      i === searchActiveIndex ? "bg-accent text-accent-foreground" : "text-foreground",
+                    )}
+                    data-testid={`option-search-file-${f.id}`}
+                  >
+                    <FileText className="w-3 h-3 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{f.name}</span>
+                    <span className="truncate text-muted-foreground text-[10px] ml-auto">{f.path}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Code-only filter */}
