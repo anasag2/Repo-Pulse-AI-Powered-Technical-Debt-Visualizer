@@ -12,7 +12,7 @@ import {
   Sparkles,
   Lightbulb,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatLastAnalyzed } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { stagger, rise, pageEnter } from "@/lib/motion";
 
@@ -94,7 +94,8 @@ export default function Dashboard() {
         </p>
 
         {/* Quick stats */}
-        <motion.div variants={stagger} initial="hidden" animate="show" className="mt-6 grid grid-cols-3 gap-3">
+        <h2 className="mt-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Workspace</h2>
+        <motion.div variants={stagger} initial="hidden" animate="show" className="mt-2 grid grid-cols-3 gap-3">
           {stats.map((s) => (
             <motion.div key={s.label} variants={rise} className="rounded-xl border border-border bg-card/40 p-4">
               <s.icon className={cn("h-4 w-4", s.color)} />
@@ -139,7 +140,7 @@ export default function Dashboard() {
                       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", riskColor(r.avgRiskScore))} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] font-medium text-foreground/90">{r.name}</span>
-                        <span className="block truncate text-[11px] text-muted-foreground">{r.totalFiles} files · {r.lastAnalyzed}</span>
+                        <span className="block truncate text-[11px] text-muted-foreground">{r.totalFiles} files · {formatLastAnalyzed(r.lastAnalyzed)}</span>
                       </span>
                       <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     </div>
