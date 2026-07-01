@@ -5,6 +5,8 @@ and a concrete recommendation. Deterministic — no AI, no cost.
 """
 from typing import Dict, List
 
+from app.services.file_classify import is_analyzable
+
 _TOP_N = 15
 _MIN_TD = 0.05
 
@@ -34,7 +36,7 @@ _RECOMMENDATIONS = {
 
 
 def build_findings(files: List[Dict], coupling: List[Dict]) -> List[Dict]:
-    code = [f for f in files if not f.get("isDirectory")]
+    code = [f for f in files if not f.get("isDirectory") and is_analyzable(f.get("path", ""))]
     if not code:
         return []
 
