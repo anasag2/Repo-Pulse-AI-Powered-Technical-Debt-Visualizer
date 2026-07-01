@@ -10,7 +10,7 @@ import {
   getGetRepositoryQueryKey,
 } from "@workspace/api-client-react";
 import type { FileNode, Repository } from "@workspace/api-client-react";
-import { cn } from "@/lib/utils";
+import { cn, formatLastAnalyzed } from "@/lib/utils";
 import {
   X, Star, GitCommit, FileText, Users, Layers, TestTube,
   RefreshCw, AlertTriangle, Box, Shield, Database, ChevronRight, ExternalLink,
@@ -501,7 +501,7 @@ export default function Studio() {
           </div>
           <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
             <span className="hidden sm:flex items-center gap-1"><Box className="w-3 h-3" /> Drag to orbit · Scroll to zoom</span>
-            {repo && <span className="flex items-center gap-1"><RefreshCw className="w-3 h-3" /> {repo.lastAnalyzed}</span>}
+            {repo && <span className="flex items-center gap-1"><RefreshCw className="w-3 h-3" /> {formatLastAnalyzed(repo.lastAnalyzed)}</span>}
           </div>
         </div>
 
