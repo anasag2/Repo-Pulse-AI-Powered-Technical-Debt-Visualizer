@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Switch, Route, Router as WouterRouter, Link, useLocation, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useListRepositories } from "@workspace/api-client-react";
+import { useListRepositories, useGetDashboardSummary } from "@workspace/api-client-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/Dashboard";
@@ -31,17 +31,20 @@ import {
   HelpCircle,
   Bell,
   Loader2,
+  ArrowRight,
+  FileText,
+  AlertTriangle,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatLastAnalyzed } from "@/lib/utils";
 
 const queryClient = new QueryClient();
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/" },
   { label: "Repositories", icon: GitBranch, href: "/repositories" },
-  { label: "Learn", icon: BookOpen, href: "/learn" },
-  { label: "Snapshots", icon: Camera, href: "/snapshots" },
   { label: "History", icon: History, href: "/history" },
+  { label: "Snapshots", icon: Camera, href: "/snapshots" },
+  { label: "Learn", icon: BookOpen, href: "/learn" },
 ];
 
 // Risk score → status-dot color (matches the visualization's risk palette)
@@ -69,7 +72,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
   const [, repoParams] = useRoute("/repositories/:id");
   const activeRepoId = repoParams?.id ? parseInt(repoParams.id) : null;
   const { data: repos } = useListRepositories();
-  const recent = repos ? [...repos].reverse().slice(0, 6) : [];
+  const { data: summary } = useGetDashboardSummary();
+  // Top 3 by share of risky files (not raw count) — 2 risky out of 10 files
+  // outranks 3 risky out of 200, since the former is proportionally worse.
+  const recent = repos ? [...repos].sort((a, b) => b.riskyFilesPercent - a.riskyFilesPercent).slice(0, 3) : [];
 
   return (
     <aside
@@ -96,7 +102,10 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
             <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-500/15 shrink-0">
               <Activity className="w-4 h-4 text-emerald-400" />
             </div>
-            <span className="text-sm font-bold text-sidebar-foreground tracking-tight">Repo-Pulse</span>
+            <div className="flex flex-col leading-tight min-w-0">
+              <span className="text-sm font-bold text-sidebar-foreground tracking-tight truncate">Repo-Pulse</span>
+              <span className="text-[10px] text-sidebar-foreground/45 truncate">AI Repository Analyzer</span>
+            </div>
             <button
               onClick={onToggle}
               title="Collapse sidebar"
@@ -128,7 +137,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
       {/* Navigation + recent repos */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {!collapsed && <SectionLabel>Navigation</SectionLabel>}
-        <nav className={cn("flex flex-col gap-0.5", collapsed ? "items-center px-2 pt-3" : "px-2")}>
+        <nav className={cn("flex flex-col gap-1", collapsed ? "items-center px-2 pt-3" : "px-2")}>
           {navItems.map((item) => {
             const isActive =
               location === item.href ||
@@ -138,16 +147,16 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
                 <div
                   title={item.label}
                   className={cn(
-                    "flex items-center rounded-md cursor-pointer transition-colors",
-                    collapsed ? "justify-center w-9 h-9" : "gap-2.5 px-2.5 h-8",
+                    "flex items-center rounded-lg cursor-pointer transition-colors",
+                    collapsed ? "justify-center w-10 h-10" : "gap-3 px-3 h-10",
                     isActive
                       ? "bg-emerald-500/15 text-emerald-400"
                       : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                   )}
                   data-testid={`nav-${item.label.toLowerCase()}`}
                 >
-                  <item.icon className="w-4 h-4 shrink-0" />
-                  {!collapsed && <span className="text-[13px] font-medium">{item.label}</span>}
+                  <item.icon className="w-[18px] h-[18px] shrink-0" />
+                  {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
                 </div>
               </Link>
             );
@@ -158,7 +167,7 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
         {!collapsed && (
           <>
             <SectionLabel>Recent Repositories</SectionLabel>
-            <div className="px-2 space-y-0.5">
+            <div className="px-2 space-y-1.5">
               {recent.length === 0 ? (
                 <p className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/40">No repositories yet</p>
               ) : (
@@ -168,26 +177,62 @@ function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => 
                     <Link key={r.id} href={`/repositories/${r.id}`}>
                       <div
                         className={cn(
-                          "flex items-center gap-2 px-2.5 py-1.5 rounded-md cursor-pointer transition-colors",
-                          isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/60"
+                          "relative flex items-center gap-3 pl-4 pr-3 py-3.5 rounded-lg border cursor-pointer transition-colors overflow-hidden",
+                          isActive
+                            ? "bg-sidebar-accent border-emerald-400/40"
+                            : "border-sidebar-border bg-sidebar-accent/40 hover:bg-sidebar-accent/80 hover:border-sidebar-border"
                         )}
                         data-testid={`recent-repo-${r.id}`}
                       >
                         <span
-                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          className="absolute left-0 top-0 bottom-0 w-1"
                           style={{ backgroundColor: riskDot(r.avgRiskScore) }}
                         />
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0 ring-4"
+                          style={{
+                            backgroundColor: riskDot(r.avgRiskScore),
+                            // @ts-expect-error -- ring color via CSS var isn't in the Tailwind type
+                            "--tw-ring-color": `${riskDot(r.avgRiskScore)}33`,
+                          }}
+                        />
                         <div className="min-w-0 flex-1">
-                          <div className={cn("text-[12px] truncate", isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80")}>
+                          <div className={cn("text-base font-bold truncate", isActive ? "text-sidebar-foreground" : "text-sidebar-foreground")}>
                             {r.name}
                           </div>
-                          <div className="text-[10px] text-sidebar-foreground/40 truncate">{r.lastAnalyzed}</div>
+                          <div className="text-xs font-semibold text-sidebar-foreground/70 truncate">{formatLastAnalyzed(r.lastAnalyzed)}</div>
                         </div>
                       </div>
                     </Link>
                   );
                 })
               )}
+            </div>
+            <Link href="/repositories">
+              <div className="mx-2 mt-1.5 flex items-center gap-1.5 rounded-md px-2.5 py-2 text-[12px] font-medium text-emerald-400 cursor-pointer transition-colors hover:bg-sidebar-accent/60" data-testid="link-view-all-repositories">
+                <span>View All Repositories</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </div>
+            </Link>
+
+            {/* Workspace — compact totals, mirrors the dashboard's stat row */}
+            <SectionLabel>Workspace</SectionLabel>
+            <div className="flex items-start justify-between gap-2 px-2.5 pb-2">
+              <div className="flex flex-col items-start gap-1">
+                <GitBranch className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-sm font-bold text-sidebar-foreground">{summary?.totalRepositories ?? 0}</span>
+                <span className="text-[10px] text-sidebar-foreground/50">Repositories</span>
+              </div>
+              <div className="flex flex-col items-start gap-1">
+                <FileText className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-sm font-bold text-sidebar-foreground">{summary?.totalFiles ?? 0}</span>
+                <span className="text-[10px] text-sidebar-foreground/50">Files analyzed</span>
+              </div>
+              <div className="flex flex-col items-start gap-1">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                <span className="text-sm font-bold text-sidebar-foreground">{summary?.totalHighRiskFiles ?? 0}</span>
+                <span className="text-[10px] text-sidebar-foreground/50">High-risk files</span>
+              </div>
             </div>
           </>
         )}
