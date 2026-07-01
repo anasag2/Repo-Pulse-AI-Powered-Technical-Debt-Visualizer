@@ -19,6 +19,7 @@ from app.services.git_mining import (
     get_recent_commits,
     get_temporal_coupling,
 )
+from app.services.duplication import compute_duplication
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -60,6 +61,56 @@ def _format_technical_debt(risky_files: int, avg_risk: float) -> str:
     hours = risky_files * 3 + round(avg_risk * 40)
     days, rem = divmod(hours, 24)
     return f"{days}d {rem}h"
+
+
+# ── Technical-debt model ─────────────────────────────────────────────────────
+# Adapted from the Lund University thesis TD model (Borg & Wangel, 2021):
+#   TD_i = Σ W_k · M_k   over per-repo min–max normalised metrics.
+# The thesis used 8 metrics with weights grounded in a literature study + expert
+# interviews (~80% agreement with developers). We now compute all 8, so these are
+# the paper's exact weights. `per_loc` divides by file size first (compare files
+# fairly); `sign = -1` means the metric REDUCES debt — more comments and more
+# functions imply better documentation / decomposition.
+_TD_MODEL = [
+    # key,           weight,  per_loc, sign
+    ("complexity",   0.125,   True,   +1),   # cyclomatic complexity   (12.5%)
+    ("cognitive",    0.175,   True,   +1),   # cognitive complexity    (17.5%)
+    ("loc",          0.15,    False,  +1),   # lines of code           (15%)
+    ("commits",      0.15,    False,  +1),   # churn                   (15%)
+    ("duplication",  0.125,   True,   +1),   # duplicated blocks       (12.5%)
+    ("coupling",     0.125,   False,  +1),   # coupling                (12.5%)
+    ("comments",     0.075,   True,   -1),   # comment lines           (-7.5%)
+    ("functions",    0.075,   True,   -1),   # function count          (-7.5%)
+]
+
+
+def _td_raw_inputs(m: Dict, coupling_by_path: Dict[str, float],
+                   dup_by_path: Dict[str, int]) -> Dict[str, float]:
+    """The raw (pre-normalisation) TD metric values for one file, with the
+    thesis's per-LOC divisions applied."""
+    loc = m.get("loc", 0) or 0
+    div = loc if loc else 1
+    return {
+        "complexity": (m.get("complexity_max", 0) or 0) / div,
+        "cognitive": (m.get("cognitive_complexity", 0) or 0) / div,
+        "loc": float(loc),
+        "commits": float(m.get("churn", 0) or 0),
+        "duplication": (dup_by_path.get(m["path"], 0) or 0) / div,
+        "coupling": float(coupling_by_path.get(m["path"], 0.0)),
+        "comments": (m.get("comment_lines", 0) or 0) / div,
+        "functions": (m.get("function_count", 0) or 0) / div,
+    }
+
+
+def _technical_debt(raw: Dict[str, float],
+                    bounds: Dict[str, Tuple[float, float]]) -> float:
+    """Weighted sum of min–max normalised metrics → per-file TD in [0, 1]."""
+    score = 0.0
+    for key, weight, _per_loc, sign in _TD_MODEL:
+        lo, hi = bounds.get(key, (0.0, 0.0))
+        norm = (raw[key] - lo) / (hi - lo) if hi > lo else 0.0
+        score += sign * weight * norm
+    return round(_clamp(score), 2)
 
 
 def build_repository_analysis(
@@ -114,6 +165,22 @@ def build_repository_analysis(
         default=0,
     )
 
+    # ---- Technical-debt model inputs -------------------------------------
+    # Temporal coupling per file (summed co-change count); reused for the graph.
+    _, _, raw_coupling = get_temporal_coupling(repo_path)
+    coupling_by_path: Dict[str, float] = {}
+    for pair in raw_coupling:
+        coupling_by_path[pair["fileA"]] = coupling_by_path.get(pair["fileA"], 0.0) + pair["coChanges"]
+        coupling_by_path[pair["fileB"]] = coupling_by_path.get(pair["fileB"], 0.0) + pair["coChanges"]
+    # Duplicated blocks per file (repo-wide near-duplicate detection).
+    dup_by_path = compute_duplication(repo_path, [m["path"] for m in metrics])
+    # Per-repo min–max bounds so each metric normalises to [0,1] before weighting.
+    _td_all = [_td_raw_inputs(m, coupling_by_path, dup_by_path) for m in metrics]
+    td_bounds: Dict[str, Tuple[float, float]] = {}
+    for _key, _w, _p, _s in _TD_MODEL:
+        _vals = [r[_key] for r in _td_all] or [0.0]
+        td_bounds[_key] = (min(_vals), max(_vals))
+
     files: List[Dict] = []
     file_extras: Dict[int, Dict] = {}
     all_authors = set()
@@ -136,7 +203,7 @@ def build_repository_analysis(
         authors = ownership.get("contributors_count", 0)
         all_authors.update((ownership.get("contributors") or {}).keys())
 
-        risk = _risk_score(churn, loc, authors, max_churn, max_loc, max_authors)
+        risk = _technical_debt(_td_raw_inputs(m, coupling_by_path, dup_by_path), td_bounds)
         coverage = _estimate_coverage(risk, path)
 
         # Hotspot: the canonical debt signal — code that is both complex AND
@@ -258,11 +325,11 @@ def build_repository_analysis(
         "lastCommit": raw_commits[0]["time_ago"] if raw_commits else "unknown",
         "avgRiskScore": avg_risk,
         "testCoverage": avg_cov,
-        "technicalDebt": _format_technical_debt(risky_files, avg_risk),
+        # Project TD index (0–100): the mean per-file TD from the weighted model.
+        "technicalDebt": f"{round(avg_risk * 100)}",
     }
 
     # ---- Temporal coupling (file pairs that change together) --------------
-    _, _, raw_coupling = get_temporal_coupling(repo_path)
     coupling: List[Dict] = []
     for pair in raw_coupling:
         a_id = path_to_id.get(pair["fileA"])
