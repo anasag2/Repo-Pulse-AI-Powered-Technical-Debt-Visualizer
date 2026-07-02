@@ -4,6 +4,9 @@ import {
   fetchMe,
   login as apiLogin,
   signup as apiSignup,
+  updateProfile as apiUpdateProfile,
+  requestDeleteCode as apiRequestDeleteCode,
+  deleteAccount as apiDeleteAccount,
   setToken,
   clearToken,
   consumeOAuthRedirect,
@@ -16,6 +19,9 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, name: string, password: string) => Promise<void>;
   logout: () => void;
+  updateProfile: (name: string) => Promise<void>;
+  requestDeleteCode: () => Promise<void>;
+  deleteAccount: (code: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -57,8 +63,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  async function updateProfile(name: string) {
+    const updated = await apiUpdateProfile(name);
+    setUser(updated);
+  }
+
+  async function requestDeleteCode() {
+    await apiRequestDeleteCode();
+  }
+
+  async function deleteAccount(code: string) {
+    await apiDeleteAccount(code);
+    clearToken();
+    setUser(null);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, oauthError, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, loading, oauthError, login, signup, logout, updateProfile, requestDeleteCode, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );
