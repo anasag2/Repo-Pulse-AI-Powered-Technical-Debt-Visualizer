@@ -16,6 +16,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { isCodeFile } from "@/lib/file-classify";
 import { cn, formatLastAnalyzed } from "@/lib/utils";
 import { usePersistedState } from "@/lib/use-persisted-state";
+import { useSettings } from "@/lib/use-settings";
 import { ease } from "@/lib/motion";
 
 type ViewMode = "3d" | "2d" | "coupling";
@@ -689,6 +690,24 @@ export default function RepositoryView() {
   const [chatOpen, setChatOpen] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // Apply the account's default color mode/view the first time this repo is
+  // opened (i.e. no per-repo choice has been saved here yet). Settings load
+  // async, so this can't be usePersistedState's initializer — it just checks
+  // sessionStorage directly and only ever wins when nothing's there yet, so a
+  // manual choice (or a later settings refetch) never gets clobbered.
+  const { data: userSettings } = useSettings();
+  useEffect(() => {
+    if (!userSettings) return;
+    if (sessionStorage.getItem(`rp-state:repoview-${repoId}-viewMode`) === null && userSettings.defaultView) {
+      setViewMode(userSettings.defaultView as ViewMode);
+    }
+    if (sessionStorage.getItem(`rp-state:repoview-${repoId}-colorBy`) === null && userSettings.defaultColorBy) {
+      setColorBy(userSettings.defaultColorBy as ColorMode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userSettings, repoId]);
+
   const [refreshing, setRefreshing] = useState(false);
 
   // 5-minute refresh cooldown (also enforced server-side). Persisted per repo so

@@ -144,6 +144,14 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class DeleteAccountInput(BaseModel):
+    code: str
+
+
+class UpdateProfileInput(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
 class TokenValidity(BaseModel):
     valid: bool
 
@@ -153,6 +161,7 @@ class UserPublic(BaseModel):
     email: EmailStr
     name: str
     createdAt: str
+    provider: Optional[str] = None  # "github" | "google" | None (email/password)
 
 
 class AuthResponse(BaseModel):

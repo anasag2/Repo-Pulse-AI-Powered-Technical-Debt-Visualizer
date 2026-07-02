@@ -25,6 +25,7 @@ export interface AuthUser {
   email: string;
   name: string;
   createdAt: string;
+  provider: "github" | "google" | null;
 }
 
 interface AuthResponse {
@@ -133,4 +134,44 @@ export async function fetchMe(): Promise<AuthUser | null> {
   });
   if (!res.ok) return null;
   return (await res.json()) as AuthUser;
+}
+
+// Updates the display name on the current account.
+export async function updateProfile(name: string): Promise<AuthUser> {
+  const token = getToken();
+  const res = await fetch("/api/auth/me", {
+    method: "PATCH",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(errorMessage(await res.json().catch(() => ({})), res.status));
+  return res.json();
+}
+
+// Emails a one-time code that must be passed to deleteAccount().
+export async function requestDeleteCode(): Promise<void> {
+  const token = getToken();
+  const res = await fetch("/api/auth/me/delete-code", {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error(errorMessage(await res.json().catch(() => ({})), res.status));
+}
+
+// Permanently deletes the current user and everything they own. Irreversible.
+// Requires the code emailed by requestDeleteCode().
+export async function deleteAccount(code: string): Promise<void> {
+  const token = getToken();
+  const res = await fetch("/api/auth/me", {
+    method: "DELETE",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(errorMessage(await res.json().catch(() => ({})), res.status));
 }
