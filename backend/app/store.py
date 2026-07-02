@@ -38,6 +38,7 @@ class RepoStore:
         self._users = db["users"]
         self._settings = db["user_settings"]
         self._resets = db["password_resets"]
+        self._delete_codes = db["delete_codes"]
         self._tours = db["tours"]
         self._ensure_indexes()
 
@@ -59,6 +60,8 @@ class RepoStore:
         self._resets.create_index([("tokenHash", ASCENDING)], unique=True)
         # TTL: Mongo auto-purges reset tokens once expiresAt passes.
         self._resets.create_index("expiresAt", expireAfterSeconds=0)
+        self._delete_codes.create_index([("userId", ASCENDING)], unique=True)
+        self._delete_codes.create_index("expiresAt", expireAfterSeconds=0)
 
     # -- id allocation -----------------------------------------------------
     def _next_seq(self, name: str) -> int:
@@ -253,6 +256,9 @@ class RepoStore:
     def set_password(self, user_id: int, password_hash: str) -> None:
         self._users.update_one({"id": user_id}, {"$set": {"passwordHash": password_hash}})
 
+    def update_user_name(self, user_id: int, name: str) -> None:
+        self._users.update_one({"id": user_id}, {"$set": {"name": name}})
+
     # -- password resets ---------------------------------------------------
     def create_password_reset(self, user_id: int, token_hash: str, expires_at: datetime) -> None:
         self._resets.insert_one({
@@ -278,6 +284,30 @@ class RepoStore:
     def consume_password_reset(self, token_hash: str) -> None:
         self._resets.update_one({"tokenHash": token_hash}, {"$set": {"used": True}})
 
+    # -- account-deletion confirmation codes --------------------------------
+    def create_delete_code(self, user_id: int, code_hash: str, expires_at: datetime) -> None:
+        # One live code per user — requesting a new one invalidates the last.
+        self._delete_codes.replace_one(
+            {"userId": user_id},
+            {"userId": user_id, "codeHash": code_hash, "expiresAt": expires_at,
+             "createdAt": datetime.now(timezone.utc)},
+            upsert=True,
+        )
+
+    def get_active_delete_code(self, user_id: int) -> Optional[Dict]:
+        doc = self._delete_codes.find_one({"userId": user_id}, {"_id": 0})
+        if doc is None:
+            return None
+        exp = doc["expiresAt"]
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < datetime.now(timezone.utc):
+            return None
+        return doc
+
+    def consume_delete_code(self, user_id: int) -> None:
+        self._delete_codes.delete_one({"userId": user_id})
+
     # -- per-user settings -------------------------------------------------
     def get_settings(self, user_id: int) -> Dict:
         doc = self._settings.find_one({"userId": user_id}, {"_id": 0, "userId": 0})
@@ -290,6 +320,22 @@ class RepoStore:
             upsert=True,
         )
         return self.get_settings(user_id)
+
+    # -- account deletion ---------------------------------------------------
+    def delete_user(self, user_id: int) -> List[str]:
+        """Delete a user and everything scoped to them (repos + their files/
+        commits/coupling/tours, settings, password-reset tokens). Returns the
+        owned repos' local clone paths so the caller can remove them on disk —
+        this store never touches the filesystem itself."""
+        local_paths: List[str] = []
+        for repo in self._repositories.find({"ownerId": user_id}, {"id": 1, "localPath": 1}):
+            local_paths.append(repo.get("localPath"))
+            self.delete_repository(repo["id"])
+        self._settings.delete_one({"userId": user_id})
+        self._resets.delete_many({"userId": user_id})
+        self._delete_codes.delete_one({"userId": user_id})
+        self._users.delete_one({"id": user_id})
+        return [p for p in local_paths if p]
 
 
 store = RepoStore()
