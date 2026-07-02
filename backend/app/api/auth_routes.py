@@ -8,29 +8,33 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Dict
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pymongo.errors import DuplicateKeyError
 
 from app.schemas.api_models import (
     AuthResponse,
+    DeleteAccountInput,
     ForgotPasswordInput,
     LoginInput,
     MessageResponse,
     ResetPasswordInput,
     SignupInput,
     TokenValidity,
+    UpdateProfileInput,
     UserPublic,
 )
 from app.services import auth, email as email_service, oauth
 from app.store import store
 
 _RESET_TTL = timedelta(hours=1)
+_DELETE_CODE_TTL = timedelta(minutes=10)
 
 
 def _hash_token(token: str) -> str:
@@ -70,6 +74,7 @@ def _public(user: Dict) -> Dict:
         "email": user["email"],
         "name": user["name"],
         "createdAt": user["createdAt"],
+        "provider": user.get("provider"),
     }
 
 
@@ -107,6 +112,39 @@ def login(payload: LoginInput):
 @router.get("/me", response_model=UserPublic)
 def me(current_user: Dict = Depends(get_current_user)):
     return _public(current_user)
+
+
+@router.patch("/me", response_model=UserPublic)
+def update_me(payload: UpdateProfileInput, current_user: Dict = Depends(get_current_user)):
+    store.update_user_name(current_user["id"], payload.name.strip())
+    return _public({**current_user, "name": payload.name.strip()})
+
+
+@router.post("/me/delete-code", response_model=MessageResponse)
+def request_delete_code(current_user: Dict = Depends(get_current_user)):
+    """Email a 6-digit confirmation code, required before /me can be deleted."""
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    store.create_delete_code(
+        current_user["id"], _hash_token(code), datetime.now(timezone.utc) + _DELETE_CODE_TTL
+    )
+    email_service.send_delete_account_code(current_user["email"], code)
+    return {"message": f"A confirmation code was sent to {current_user['email']}."}
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(payload: DeleteAccountInput, current_user: Dict = Depends(get_current_user)):
+    """Permanently delete the current user and everything they own (repos,
+    clones on disk, settings). Irreversible. Requires a code from
+    /me/delete-code, emailed to the account's address."""
+    record = store.get_active_delete_code(current_user["id"])
+    if record is None or record["codeHash"] != _hash_token(payload.code.strip()):
+        raise HTTPException(status_code=400, detail="That code is invalid or has expired.")
+    store.consume_delete_code(current_user["id"])
+
+    local_paths = store.delete_user(current_user["id"])
+    for path in local_paths:
+        shutil.rmtree(path, ignore_errors=True)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ─── Password reset ──────────────────────────────────────────────────────────
