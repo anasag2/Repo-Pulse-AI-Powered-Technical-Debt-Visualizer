@@ -245,6 +245,8 @@ def build_repository_analysis(
             "functionCount": function_count,
             "cognitiveComplexity": m.get("cognitive_complexity", 0),
             "duplicatedBlocks": dup_by_path.get(path, 0),
+            "commentLines": m.get("comment_lines", 0),
+            "couplingDegree": int(coupling_by_path.get(path, 0.0)),
         }
         files.append(node)
         path_to_id[path] = node_id
@@ -307,6 +309,8 @@ def build_repository_analysis(
             "functionCount": sum(c["functionCount"] for c in children),
             "cognitiveComplexity": sum(c.get("cognitiveComplexity", 0) for c in children),
             "duplicatedBlocks": sum(c.get("duplicatedBlocks", 0) for c in children),
+            "commentLines": sum(c.get("commentLines", 0) for c in children),
+            "couplingDegree": sum(c.get("couplingDegree", 0) for c in children),
         }
         files.append(dir_node)
         file_extras[dir_id] = {"riskFactors": [], "recentCommits": recent_commits}

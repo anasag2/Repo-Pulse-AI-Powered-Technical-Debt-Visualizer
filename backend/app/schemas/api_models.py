@@ -70,6 +70,8 @@ class FileNode(BaseModel):
     functionCount: int = 0
     cognitiveComplexity: int = 0
     duplicatedBlocks: int = 0
+    commentLines: int = 0
+    couplingDegree: int = 0
 
 
 class RiskFactor(BaseModel):

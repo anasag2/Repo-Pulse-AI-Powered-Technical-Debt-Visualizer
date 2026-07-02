@@ -65,6 +65,10 @@ type ExtMetrics = {
   ageDays: number;
   todoMarkers: number;
   functionCount: number;
+  cognitiveComplexity: number;
+  duplicatedBlocks: number;
+  commentLines: number;
+  couplingDegree: number;
 };
 function ext(file: FileNode): Partial<ExtMetrics> {
   return file as FileNode & Partial<ExtMetrics>;
@@ -517,7 +521,19 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
               />
               <MetricCard label="Lines of Code" value={file.linesOfCode.toLocaleString()} />
               <MetricCard label="Cyclomatic Cplx" value={file.complexity} />
+              <MetricCard label="Cognitive Cplx" value={ext(file).cognitiveComplexity ?? 0} />
               <MetricCard label="Functions" value={ext(file).functionCount ?? 0} />
+              <MetricCard
+                label="Duplicated Blocks"
+                value={ext(file).duplicatedBlocks ?? 0}
+                color={(ext(file).duplicatedBlocks ?? 0) > 0 ? "text-orange-400" : undefined}
+              />
+              <MetricCard
+                label="Coupling"
+                value={ext(file).couplingDegree ?? 0}
+                color={(ext(file).couplingDegree ?? 0) > 0 ? "text-violet-400" : undefined}
+              />
+              <MetricCard label="Comment Lines" value={ext(file).commentLines ?? 0} />
               <MetricCard
                 label="Test Coverage"
                 value={`${file.testCoverage}%`}
@@ -682,6 +698,13 @@ export default function RepositoryView() {
   const [cooldownUntil, setCooldownUntil] = useState<number>(() => {
     try { return Number(localStorage.getItem(cooldownKey)) || 0; } catch { return 0; }
   });
+  // Re-read the cooldown when switching repos — this view doesn't remount on the
+  // :id change, so the initializer above would otherwise keep the first repo's
+  // cooldown and wrongly disable refresh on every other repo.
+  useEffect(() => {
+    try { setCooldownUntil(Number(localStorage.getItem(`rp-refresh-${repoId}`)) || 0); }
+    catch { setCooldownUntil(0); }
+  }, [repoId]);
   const [, setTick] = useState(0);
   useEffect(() => {
     if (cooldownUntil <= Date.now()) return;
