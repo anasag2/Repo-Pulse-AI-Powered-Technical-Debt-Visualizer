@@ -61,3 +61,38 @@ def send_password_reset(to_email: str, reset_url: str) -> None:
             log.error("Resend send failed (%s): %s", res.status_code, res.text)
     except Exception as exc:  # never let email failures leak to the caller
         log.error("Resend send error: %s", exc)
+
+
+def send_delete_account_code(to_email: str, code: str) -> None:
+    """Email a one-time account-deletion confirmation code, or log it in dev
+    when no key is configured."""
+    api_key = os.getenv("RESEND_API_KEY")
+    subject = "Confirm deleting your Repo-Pulse account"
+    html = (
+        '<div style="font-family:system-ui,sans-serif;max-width:480px;margin:auto">'
+        '<h2 style="color:#ef4444">Confirm account deletion</h2>'
+        "<p>Use this code to permanently delete your Repo-Pulse account and all its "
+        "repositories. This code expires in 10 minutes.</p>"
+        f'<p style="font-size:28px;font-weight:700;letter-spacing:4px;'
+        f'background:#1e293b;color:#fff;padding:12px 20px;border-radius:8px;'
+        f'display:inline-block">{code}</p>'
+        "<p style=\"color:#64748b;font-size:13px\">If you didn't request this, you "
+        "can safely ignore this email — your account will not be deleted.</p></div>"
+    )
+
+    if not api_key:
+        print(f"\n[DEV] Account-deletion code for {to_email}: {code}\n", flush=True)
+        log.warning("Account-deletion code (dev, no RESEND_API_KEY) for %s", to_email)
+        return
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            res = client.post(
+                _RESEND_ENDPOINT,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"from": _from_address(), "to": [to_email], "subject": subject, "html": html},
+            )
+        if not res.is_success:
+            log.error("Resend send failed (%s): %s", res.status_code, res.text)
+    except Exception as exc:
+        log.error("Resend send error: %s", exc)
