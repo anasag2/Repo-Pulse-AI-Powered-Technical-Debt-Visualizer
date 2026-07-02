@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   type AuthUser,
   fetchMe,
@@ -27,6 +28,7 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [oauthError, setOauthError] = useState<string | null>(null);
@@ -61,6 +63,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     clearToken();
     setUser(null);
+    // Drop all cached API data so the next account on this browser can't see
+    // (even briefly, via stale-while-revalidate) the previous user's data.
+    queryClient.clear();
   }
 
   async function updateProfile(name: string) {
@@ -76,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await apiDeleteAccount(code);
     clearToken();
     setUser(null);
+    queryClient.clear();
   }
 
   return (
