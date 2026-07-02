@@ -50,22 +50,23 @@ const ACTIONS = [
     accent: "text-red-400",
     ring: "hover:border-red-400/40",
   },
-  {
-    href: "/history",
-    icon: History,
-    title: "History",
-    desc: "See how a repository's activity and churn have changed over time.",
-    accent: "text-violet-400",
-    ring: "hover:border-violet-400/40",
-  },
-  {
-    href: "/snapshots",
-    icon: Camera,
-    title: "Snapshots",
-    desc: "Track how a repository's health changes over time.",
-    accent: "text-amber-400",
-    ring: "hover:border-amber-400/40",
-  },
+  // Hidden for now: History has known issues; Snapshots isn't developed yet.
+  // {
+  //   href: "/history",
+  //   icon: History,
+  //   title: "History",
+  //   desc: "See how a repository's activity and churn have changed over time.",
+  //   accent: "text-violet-400",
+  //   ring: "hover:border-violet-400/40",
+  // },
+  // {
+  //   href: "/snapshots",
+  //   icon: Camera,
+  //   title: "Snapshots",
+  //   desc: "Track how a repository's health changes over time.",
+  //   accent: "text-amber-400",
+  //   ring: "hover:border-amber-400/40",
+  // },
 ] as const;
 
 const TIPS = [

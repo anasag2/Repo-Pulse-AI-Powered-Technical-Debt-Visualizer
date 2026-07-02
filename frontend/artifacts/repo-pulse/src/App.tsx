@@ -45,8 +45,9 @@ const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/" },
   { label: "Repositories", icon: GitBranch, href: "/repositories" },
   { label: "Findings", icon: Flame, href: "/findings" },
-  { label: "History", icon: History, href: "/history" },
-  { label: "Snapshots", icon: Camera, href: "/snapshots" },
+  // Hidden for now: History has known issues; Snapshots isn't developed yet.
+  // { label: "History", icon: History, href: "/history" },
+  // { label: "Snapshots", icon: Camera, href: "/snapshots" },
   { label: "Learn", icon: BookOpen, href: "/learn" },
 ];
 

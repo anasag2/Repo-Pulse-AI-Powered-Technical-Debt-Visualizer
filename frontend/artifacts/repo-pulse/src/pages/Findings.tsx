@@ -92,6 +92,7 @@ function FindingCard({ repoId, f }: { repoId: number; f: Finding }) {
         </div>
       )}
 
+      {/* Hidden for now: History has known issues.
       <div className="mt-3">
         <Link href={`/history?repo=${repoId}&path=${encodeURIComponent(f.path)}`}>
           <button className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400 hover:text-emerald-300">
@@ -99,6 +100,7 @@ function FindingCard({ repoId, f }: { repoId: number; f: Finding }) {
           </button>
         </Link>
       </div>
+      */}
     </motion.div>
   );
 }

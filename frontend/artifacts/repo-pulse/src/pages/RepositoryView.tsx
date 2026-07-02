@@ -445,6 +445,7 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
             <div className={cn("mt-1 inline-flex text-[10px] font-medium px-1.5 py-0.5 rounded-full border", riskBadge(file.riskScore))}>
               {riskLabel(file.riskScore)}
             </div>
+            {/* Hidden for now: History has known issues; Snapshots isn't developed yet.
             <div className="mt-2.5 flex flex-wrap gap-2">
               <Link href={`/history?repo=${repoId}&path=${encodeURIComponent(file.path)}`}>
                 <button
@@ -463,6 +464,7 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
                 </button>
               </Link>
             </div>
+            */}
           </div>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-1 shrink-0" data-testid="button-close-panel">
             <X className="w-4 h-4" />
