@@ -58,8 +58,7 @@ function SettingsSection({
       )}
     </motion.div>
   );
-}
-
+} 
 function AnalysisSettingsBody() {
   const { data: settings, isLoading } = useSettings();
   const update = useUpdateSettings();
@@ -103,7 +102,6 @@ function AnalysisSettingsBody() {
     </div>
   );
 }
-
 function ProfileBody() {
   const { user, updateProfile } = useAuth();
   const { data: settings } = useSettings();

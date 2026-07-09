@@ -97,8 +97,8 @@ def analyze_file(repo_path: Optional[str], file_node: Dict,
         "Assess the technical debt in this file and give a concrete refactor plan."
     )
 
-    resp = _client().messages.parse(
-        model=_MODEL,
+    resp = _client().messages.parse(#Anthropic libary   
+                model=_MODEL,
         max_tokens=2000,
         thinking={"type": "disabled"},
         system=_SYSTEM_FILE,
