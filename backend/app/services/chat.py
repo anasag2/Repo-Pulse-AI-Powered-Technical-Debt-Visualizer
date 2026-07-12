@@ -16,7 +16,8 @@ Config via env:
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Optional
+import time
+from typing import Dict, List, Optional, Set
 
 import httpx
 
@@ -60,6 +61,26 @@ def list_free_models() -> List[Dict]:
         return free or _FALLBACK_MODELS
     except Exception:
         return _FALLBACK_MODELS
+
+
+# Cache of free model IDs so the per-message guard (below) doesn't hit OpenRouter
+# on every chat turn. Refreshed lazily every _FREE_TTL seconds.
+_FREE_TTL = 600.0  # 10 minutes
+_free_cache: Dict[str, object] = {"ids": None, "at": 0.0}
+
+
+def free_model_ids() -> Set[str]:
+    """Cached set of model IDs that are free on OpenRouter (pricing 0/0), always
+    including the curated fallback set so the default model is never rejected.
+    Used to keep app-key requests on the free tier (see the chat route)."""
+    now = time.time()
+    ids = _free_cache["ids"]
+    if ids is None or (now - float(_free_cache["at"])) > _FREE_TTL:  # type: ignore[arg-type]
+        ids = {m["id"] for m in list_free_models()}
+        ids.update(m["id"] for m in _FALLBACK_MODELS)  # curated :free set always allowed
+        _free_cache["ids"] = ids
+        _free_cache["at"] = now
+    return ids  # type: ignore[return-value]
 
 
 def _file_line(f: Dict) -> str:

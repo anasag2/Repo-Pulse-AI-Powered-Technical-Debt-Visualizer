@@ -275,6 +275,17 @@ def repo_chat(repo_id: int, payload: ChatInput,
                    "or set OPENROUTER_API_KEY on the backend for the free experience.",
         )
 
+    # Billing guard: the UI only offers free models, but the model id is client-supplied.
+    # When a request falls back to the app's OpenRouter key (no user-provided key), refuse
+    # any non-free model so a crafted request can't run up charges on the app account.
+    # A user who brings their own key may pick whatever they like — it's their spend.
+    if not payload.apiKey and model not in chat_service.free_model_ids():
+        raise HTTPException(
+            status_code=403,
+            detail="That model isn't on the free tier. Add your own OpenRouter key in "
+                   "chat settings to use paid models.",
+        )
+
     system = chat_service.build_repo_context(repo, files, selected)
     messages = [{"role": "system", "content": system}] + [
         {"role": m.role, "content": m.content} for m in payload.messages
