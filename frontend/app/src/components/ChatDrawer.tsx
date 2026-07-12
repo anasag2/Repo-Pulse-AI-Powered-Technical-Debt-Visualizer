@@ -9,6 +9,10 @@ import {
 } from "@/lib/chat-api";
 import { cn } from "@/lib/utils";
 
+// Keep the last N messages (≈6 exchanges) when sending, to bound token cost.
+// The backend enforces its own cap too — this just trims the payload.
+const CHAT_HISTORY_LIMIT = 12;
+
 const SUGGESTIONS = [
   "What are the riskiest files and why?",
   "Where should I start refactoring?",
@@ -67,7 +71,9 @@ export default function ChatDrawer({
     setSending(true);
     try {
       const { reply } = await sendChat(repoId, {
-        messages: next,
+        // Send only the recent turns to bound tokens/cost; the full transcript
+        // stays on screen. The backend also caps this, so it's not a trust boundary.
+        messages: next.slice(-CHAT_HISTORY_LIMIT),
         model: model || undefined,
         fileId: selectedFile?.id ?? null,
         apiKey: byok || undefined,

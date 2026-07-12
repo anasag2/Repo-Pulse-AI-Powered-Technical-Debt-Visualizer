@@ -53,6 +53,11 @@ _CLONE_TTL_DAYS = float(os.getenv("REPO_PULSE_CLONE_TTL_DAYS", "7"))
 # Minimum gap between refreshes of the same repo (anti-spam; refreshing more
 # often is pointless and costs a fetch + recompute + AI tour regeneration).
 _REANALYZE_COOLDOWN_S = float(os.getenv("REPO_PULSE_REFRESH_COOLDOWN_S", "300"))
+# Chat history cap: only the most recent N turns are forwarded to the model. Bounds
+# token cost per request and stops a crafted client from forcing a huge context.
+_MAX_CHAT_MESSAGES = int(os.getenv("REPO_PULSE_MAX_CHAT_MESSAGES", "12"))
+# Hard per-message length cap (chars) — a defensive bound against a single giant message.
+_MAX_CHAT_MSG_CHARS = int(os.getenv("REPO_PULSE_MAX_CHAT_MSG_CHARS", "8000"))
 
 
 def _owned_or_404(repo_id: int, user: Dict) -> Dict:
@@ -286,9 +291,12 @@ def repo_chat(repo_id: int, payload: ChatInput,
                    "chat settings to use paid models.",
         )
 
+    # Cap history (most recent turns only) + per-message length so token cost per
+    # request is bounded regardless of what the client sends.
     system = chat_service.build_repo_context(repo, files, selected)
+    recent = payload.messages[-_MAX_CHAT_MESSAGES:]
     messages = [{"role": "system", "content": system}] + [
-        {"role": m.role, "content": m.content} for m in payload.messages
+        {"role": m.role, "content": m.content[:_MAX_CHAT_MSG_CHARS]} for m in recent
     ]
     try:
         reply = chat_service.chat(messages, model=model, api_key=api_key)
