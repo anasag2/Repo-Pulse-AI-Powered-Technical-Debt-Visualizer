@@ -25,7 +25,7 @@ from app.db import db
 
 # Hide Mongo's _id and the private clone path from API responses.
 _API_PROJECTION = {"_id": 0, "localPath": 0}
-_FILE_LIST_PROJECTION = {"_id": 0, "riskFactors": 0, "recentCommits": 0}
+_FILE_LIST_PROJECTION = {"_id": 0, "riskFactors": 0, "recentCommits": 0, "tdContributions": 0}
 
 
 class RepoStore:

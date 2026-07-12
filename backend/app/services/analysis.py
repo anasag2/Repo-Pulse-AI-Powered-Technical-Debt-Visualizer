@@ -84,6 +84,19 @@ _TD_MODEL = [
     ("functions",    0.075,   True,   -1),   # function count          (-7.5%)
 ]
 
+# Human labels for each TD-model metric — used for the risk-factor panel and the
+# AI prompt so the score, the UI, and Claude all describe the same drivers.
+_TD_LABELS = {
+    "complexity":  "Cyclomatic complexity",
+    "cognitive":   "Cognitive complexity",
+    "loc":         "File size",
+    "commits":     "Churn",
+    "duplication": "Code duplication",
+    "coupling":    "Temporal coupling",
+    "comments":    "Comment coverage",
+    "functions":   "Function decomposition",
+}
+
 
 def _td_raw_inputs(m: Dict, coupling_by_path: Dict[str, float],
                    dup_by_path: Dict[str, int]) -> Dict[str, float]:
@@ -104,14 +117,31 @@ def _td_raw_inputs(m: Dict, coupling_by_path: Dict[str, float],
 
 
 def _technical_debt(raw: Dict[str, float],
-                    bounds: Dict[str, Tuple[float, float]]) -> float:
-    """Weighted sum of min–max normalised metrics → per-file TD in [0, 1]."""
+                    bounds: Dict[str, Tuple[float, float]]
+                    ) -> Tuple[float, List[Dict]]:
+    """Weighted sum of min–max normalised metrics → per-file TD in [0, 1].
+
+    Also returns the per-metric contribution breakdown (the actual drivers of the
+    score: sign · weight · normalised value), so the UI risk-factor panel and the AI
+    prompt can explain the number using the exact model that produced it — rather than
+    a separate ad-hoc heuristic. Positive contributions push debt up; negative ones
+    (comments, functions) pull it down.
+    """
     score = 0.0
+    contributions: List[Dict] = []
     for key, weight, _per_loc, sign in _TD_MODEL:
         lo, hi = bounds.get(key, (0.0, 0.0))
         norm = (raw[key] - lo) / (hi - lo) if hi > lo else 0.0
-        score += sign * weight * norm
-    return round(_clamp(score), 2)
+        contribution = sign * weight * norm
+        score += contribution
+        contributions.append({
+            "key": key,
+            "name": _TD_LABELS[key],
+            "weight": weight,
+            "normalized": round(norm, 3),
+            "contribution": round(contribution, 4),
+        })
+    return round(_clamp(score), 2), contributions
 
 
 def build_repository_analysis(
@@ -158,13 +188,10 @@ def build_repository_analysis(
     recent_commits = commits[:5]
 
     # ---- Per-file metrics + normalization --------------------------------
+    # (max_churn / max_complexity feed the hotspot signal below; the TD model
+    # normalises via its own per-metric bounds, not these maxima.)
     max_churn = max((m.get("churn", 0) for m in metrics), default=0)
-    max_loc = max((m.get("loc", 0) for m in metrics), default=0)
     max_complexity = max((m.get("complexity_max", 0) for m in metrics), default=0)
-    max_authors = max(
-        (m.get("ownership", {}).get("contributors_count", 0) for m in metrics),
-        default=0,
-    )
 
     # ---- Technical-debt model inputs -------------------------------------
     # Temporal coupling per file (summed co-change count); reused for the graph.
@@ -206,13 +233,22 @@ def build_repository_analysis(
         ownership = m.get("ownership", {})
         authors = ownership.get("contributors_count", 0)
         all_authors.update((ownership.get("contributors") or {}).keys())
+        # Real per-file contributors (name + commit count), most commits first, so
+        # the file panel's Contributors tab shows actual people, not "Contributor N".
+        # Capped since the UI lists only the top handful.
+        contributors = sorted(
+            ({"name": name, "commits": commits}
+             for name, commits in (ownership.get("contributors") or {}).items()),
+            key=lambda c: c["commits"], reverse=True,
+        )[:10]
 
         # Only code files get a technical-debt score; configs/docs/data score 0
         # (still stored + shown on the map, just not part of the debt analysis).
         if is_analyzable(path):
-            risk = _technical_debt(_td_raw_inputs(m, coupling_by_path, dup_by_path), td_bounds)
+            risk, td_contributions = _technical_debt(
+                _td_raw_inputs(m, coupling_by_path, dup_by_path), td_bounds)
         else:
-            risk = 0.0
+            risk, td_contributions = 0.0, []
         coverage = _estimate_coverage(risk, path)
 
         # Hotspot: the canonical debt signal — code that is both complex AND
@@ -247,26 +283,29 @@ def build_repository_analysis(
             "duplicatedBlocks": dup_by_path.get(path, 0),
             "commentLines": m.get("comment_lines", 0),
             "couplingDegree": int(coupling_by_path.get(path, 0.0)),
+            "contributors": contributors,
         }
         files.append(node)
         path_to_id[path] = node_id
 
+        # Risk factors ARE the debt model's own drivers: each positive-contribution
+        # metric as a share of the file's total upward push, so the panel, the score,
+        # and the AI all agree. (comments/functions only ever reduce debt, so they
+        # never surface here.) Scores land in [0,1] and sum to 1 across the drivers.
+        drivers = sorted(
+            (c for c in td_contributions if c["contribution"] > 0),
+            key=lambda c: c["contribution"], reverse=True,
+        )
+        total_push = sum(c["contribution"] for c in drivers) or 1.0
         risk_factors = [
-            {"name": "High Churn",
-             "score": round(0.5 * norm_churn, 2)},
-            {"name": "High Complexity",
-             "score": round(0.4 * norm_complexity, 2)},
-            {"name": "Large File Size",
-             "score": round(0.3 * (loc / max_loc if max_loc else 0), 2)},
-            {"name": "Many Authors",
-             "score": round(0.2 * (authors / max_authors if max_authors else 0), 2)},
-            {"name": "Recent Bug Fixes",
-             "score": round(min(1.0, bug_commits / 8) * 0.3, 2)},
-            {"name": "Low Test Coverage",
-             "score": round((100 - coverage) / 100 * 0.3, 2)},
+            {"name": c["name"], "score": round(c["contribution"] / total_push, 2)}
+            for c in drivers
         ]
         file_extras[node_id] = {
             "riskFactors": [rf for rf in risk_factors if rf["score"] > 0],
+            # Full per-metric breakdown (all 8, incl. debt-reducing ones) for the AI
+            # so it explains the score with the exact model that produced it.
+            "tdContributions": td_contributions,
             "recentCommits": recent_commits,
         }
 

@@ -49,6 +49,11 @@ class RepositoryInput(BaseModel):
     isPublic: Optional[bool] = True
 
 
+class Contributor(BaseModel):
+    name: str
+    commits: int
+
+
 class FileNode(BaseModel):
     id: int
     repoId: int
@@ -72,6 +77,7 @@ class FileNode(BaseModel):
     duplicatedBlocks: int = 0
     commentLines: int = 0
     couplingDegree: int = 0
+    contributors: List[Contributor] = []
 
 
 class RiskFactor(BaseModel):
