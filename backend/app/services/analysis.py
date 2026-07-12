@@ -36,16 +36,6 @@ def _author_initials(name: str) -> str:
     return (parts[0][0] + parts[1][0]).upper()
 
 
-def _risk_score(churn: int, loc: int, authors: int,
-                max_churn: int, max_loc: int, max_authors: int) -> float:
-    """Weighted blend of normalized churn, size and author spread (0..1)."""
-    norm_churn = churn / max_churn if max_churn else 0
-    norm_loc = loc / max_loc if max_loc else 0
-    norm_authors = authors / max_authors if max_authors else 0
-    score = 0.5 * norm_churn + 0.3 * norm_loc + 0.2 * norm_authors
-    return round(_clamp(score), 2)
-
-
 def _estimate_coverage(risk_score: float, path: str) -> int:
     """
     Heuristic test-coverage proxy (the miner does not run tests). Files that
@@ -56,12 +46,6 @@ def _estimate_coverage(risk_score: float, path: str) -> int:
     if "test" in lowered or "spec" in lowered or "__tests__" in lowered:
         return 90
     return int(_clamp(0.9 - risk_score * 0.7, 0.05, 0.95) * 100)
-
-
-def _format_technical_debt(risky_files: int, avg_risk: float) -> str:
-    hours = risky_files * 3 + round(avg_risk * 40)
-    days, rem = divmod(hours, 24)
-    return f"{days}d {rem}h"
 
 
 # ── Technical-debt model ─────────────────────────────────────────────────────
