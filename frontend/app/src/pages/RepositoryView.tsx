@@ -325,8 +325,10 @@ function AiInsightCard({ repoId, fileId }: { repoId: number; fileId: number }) {
     setState("loading");
     setError("");
     try {
+      const token = getToken();
       const res = await fetch(`/api/repositories/${repoId}/files/${fileId}/ai-insight`, {
         method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
