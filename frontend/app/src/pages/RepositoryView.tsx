@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo, useEffect, Component } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "wouter";
 import {
   useGetRepository,
@@ -22,7 +23,7 @@ import { ease } from "@/lib/motion";
 type ViewMode = "3d" | "2d" | "coupling";
 import {
   X,
-  Star,
+  Maximize2,
   GitCommit,
   FileText,
   TestTube,
@@ -71,6 +72,7 @@ type ExtMetrics = {
   commentLines: number;
   couplingDegree: number;
   contributors: { name: string; commits: number }[];
+  aiInsight: AiInsight | null;
 };
 function ext(file: FileNode): Partial<ExtMetrics> {
   return file as FileNode & Partial<ExtMetrics>;
@@ -316,17 +318,134 @@ const SEVERITY_STYLE: Record<string, string> = {
   high: "bg-red-400/15 text-red-400 border-red-400/25",
 };
 
-function AiInsightCard({ repoId, fileId }: { repoId: number; fileId: number }) {
-  const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
-  const [insight, setInsight] = useState<AiInsight | null>(null);
-  const [error, setError] = useState<string>("");
+// Roomy, readable view of a full Claude analysis — a modal overlay (not a browser
+// popup). Backdrop click-away + Esc close, background scroll locked, focus moved in.
+function AiInsightModal({ insight, filePath, repoUrl, onClose }: {
+  insight: AiInsight; filePath: string; repoUrl: string; onClose: () => void;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    cardRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
 
+  // Portal to <body> so the fixed overlay escapes the file panel's transformed,
+  // overflow-hidden ancestor (framer-motion sets a transform → containing block).
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      role="dialog" aria-modal="true" aria-labelledby="ai-insight-title"
+      data-testid="ai-insight-modal"
+    >
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div
+        ref={cardRef} tabIndex={-1}
+        className="relative w-full max-w-[680px] max-h-[85vh] flex flex-col bg-card border border-border rounded-xl shadow-2xl outline-none"
+      >
+        {/* Header */}
+        <div className="shrink-0 px-5 pt-4 pb-3 border-b border-border">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 id="ai-insight-title" className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" /> AI Debt Analysis
+              </h3>
+              <p className="mt-1 text-[11px] font-mono text-muted-foreground break-all">{filePath}</p>
+            </div>
+            <button
+              onClick={onClose} aria-label="Close" data-testid="button-close-insight-modal"
+              className="text-muted-foreground hover:text-foreground p-1 shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full border uppercase tracking-wide", SEVERITY_STYLE[insight.severity])}>
+              {insight.severity} severity
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              Estimated effort: <span className="text-foreground font-medium">{insight.estimatedEffort}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          <section>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Summary</div>
+            <p className="text-[13px] text-foreground leading-relaxed">{insight.summary}</p>
+          </section>
+          {insight.debtDrivers.length > 0 && (
+            <section>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Debt drivers</div>
+              <div className="flex flex-wrap gap-1.5">
+                {insight.debtDrivers.map((d, i) => (
+                  <span key={i} className="text-[12px] bg-muted/60 border border-border rounded-md px-2 py-1 text-foreground">{d}</span>
+                ))}
+              </div>
+            </section>
+          )}
+          {insight.refactorSteps.length > 0 && (
+            <section>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Refactor plan</div>
+              <ol className="space-y-2.5">
+                {insight.refactorSteps.map((s, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="shrink-0 w-5 h-5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold flex items-center justify-center">{i + 1}</span>
+                    <span className="text-[13px] text-foreground leading-relaxed pt-0.5">{s}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 px-5 py-3 border-t border-border flex items-center justify-between gap-2">
+          <a
+            href={blobUrl(repoUrl, filePath)} target="_blank" rel="noreferrer"
+            className="text-[11px] text-emerald-400 hover:underline inline-flex items-center gap-1"
+          >
+            Open on GitHub <ExternalLink className="w-3 h-3" />
+          </a>
+          <button
+            onClick={onClose}
+            className="text-[11px] font-semibold px-3 py-1.5 rounded-md bg-emerald-500 text-white hover:bg-emerald-400"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function AiInsightCard({ repoId, fileId, filePath, repoUrl, cached }: {
+  repoId: number; fileId: number; filePath: string; repoUrl: string; cached: AiInsight | null;
+}) {
+  // Seed from the cached analysis (saved on the file record) so a prior run just
+  // shows up when you reopen the file — no button, no re-spend on Claude.
+  const [state, setState] = useState<"idle" | "loading" | "done" | "error">(cached ? "done" : "idle");
+  const [insight, setInsight] = useState<AiInsight | null>(cached);
+  const [error, setError] = useState<string>("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  // Explicit user action → always request a fresh run (force=true); the backend
+  // saves it so it persists next time.
   async function run() {
     setState("loading");
     setError("");
     try {
       const token = getToken();
-      const res = await fetch(`/api/repositories/${repoId}/files/${fileId}/ai-insight`, {
+      const res = await fetch(`/api/repositories/${repoId}/files/${fileId}/ai-insight?force=true`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -336,6 +455,9 @@ function AiInsightCard({ repoId, fileId }: { repoId: number; fileId: number }) {
       }
       setInsight(await res.json());
       setState("done");
+      setModalOpen(true); // jump straight to the roomy, readable view
+      // Refresh the cached file so a later reopen seeds from the now-saved insight.
+      queryClient.invalidateQueries({ queryKey: getGetFileQueryKey(repoId, fileId) });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
       setState("error");
@@ -373,45 +495,33 @@ function AiInsightCard({ repoId, fileId }: { repoId: number; fileId: number }) {
         <p className="text-[10px] text-red-400">{error}</p>
       )}
       {state === "done" && insight && (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           <div className="flex items-center gap-2">
             <span className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded-full border uppercase", SEVERITY_STYLE[insight.severity])}>
               {insight.severity} severity
             </span>
             <span className="text-[9px] text-muted-foreground">Effort: {insight.estimatedEffort}</span>
           </div>
-          <p className="text-[11px] text-foreground leading-relaxed">{insight.summary}</p>
-          {insight.debtDrivers.length > 0 && (
-            <div>
-              <div className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Debt drivers</div>
-              <div className="flex flex-wrap gap-1">
-                {insight.debtDrivers.map((d, i) => (
-                  <span key={i} className="text-[10px] bg-muted/60 border border-border rounded px-1.5 py-0.5 text-foreground">{d}</span>
-                ))}
-              </div>
-            </div>
-          )}
-          {insight.refactorSteps.length > 0 && (
-            <div>
-              <div className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Refactor plan</div>
-              <ol className="space-y-1">
-                {insight.refactorSteps.map((s, i) => (
-                  <li key={i} className="text-[11px] text-foreground flex gap-1.5">
-                    <span className="text-emerald-400 font-bold shrink-0">{i + 1}.</span>
-                    <span>{s}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
+          <p className="text-[11px] text-foreground leading-relaxed line-clamp-2">{insight.summary}</p>
+          <button
+            onClick={() => setModalOpen(true)}
+            className="w-full mt-0.5 inline-flex items-center justify-center gap-1 h-7 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+            data-testid="button-view-full-insight"
+          >
+            View full analysis <Maximize2 className="w-3 h-3" />
+          </button>
         </div>
+      )}
+
+      {modalOpen && insight && (
+        <AiInsightModal insight={insight} filePath={filePath} repoUrl={repoUrl} onClose={() => setModalOpen(false)} />
       )}
     </div>
   );
 }
 
 function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileId: number; repoUrl: string; onClose: () => void }) {
-  const [tab, setTab] = useState<"overview" | "history" | "code" | "contributors">("overview");
+  const [tab, setTab] = useState<"overview" | "history" | "contributors">("overview");
   const { data: file, isLoading } = useGetFile(repoId, fileId, {
     query: { queryKey: getGetFileQueryKey(repoId, fileId) },
   });
@@ -443,7 +553,6 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
             </div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-foreground truncate">{file.name}</h3>
-              <Star className="w-3 h-3 text-muted-foreground shrink-0" />
             </div>
             <div className={cn("mt-1 inline-flex text-[10px] font-medium px-1.5 py-0.5 rounded-full border", riskBadge(file.riskScore))}>
               {riskLabel(file.riskScore)}
@@ -475,7 +584,7 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
         </div>
         {/* Tabs */}
         <div className="flex gap-3 mt-2.5">
-          {(["overview", "history", "code", "contributors"] as const).map((t) => (
+          {(["overview", "history", "contributors"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -559,7 +668,14 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
                 />
               </div>
             </div>
-            <AiInsightCard repoId={repoId} fileId={fileId} />
+            <AiInsightCard
+              key={fileId}
+              repoId={repoId}
+              fileId={fileId}
+              filePath={file.path}
+              repoUrl={repoUrl}
+              cached={ext(file).aiInsight ?? null}
+            />
             {file.riskFactors && file.riskFactors.length > 0 && (
               <div className="mb-3">
                 <h4 className="text-[11px] font-semibold text-foreground mb-2 flex items-center gap-1.5">
@@ -634,17 +750,6 @@ function FilePanel({ repoId, fileId, repoUrl, onClose }: { repoId: number; fileI
               <p className="text-xs text-muted-foreground">No commit history</p>
             </div>
           )
-        )}
-        {tab === "code" && (
-          <div className="text-center py-8">
-            <FileText className="w-6 h-6 text-muted-foreground mx-auto mb-2 opacity-40" />
-            <p className="text-xs text-muted-foreground mb-1">Source preview not loaded</p>
-            <p className="text-[10px] text-muted-foreground/70 mb-4 font-mono break-all px-4">{file.path}</p>
-            <a href={blobUrl(repoUrl, file.path)} target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:underline">
-              Open on GitHub <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </div>
         )}
         {tab === "contributors" && (
           <div className="space-y-2">
@@ -1150,7 +1255,7 @@ export default function RepositoryView() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 40, opacity: 0 }}
               transition={{ duration: 0.25, ease }}
-              className="w-72 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col"
+              className="w-80 shrink-0 border-l border-border bg-card overflow-hidden flex flex-col"
             >
               <FilePanel repoId={repoId} fileId={selectedFile.id} repoUrl={repo.url} onClose={() => setSelectedFile(null)} />
             </motion.div>
