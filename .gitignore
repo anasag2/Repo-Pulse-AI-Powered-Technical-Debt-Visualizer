@@ -67,7 +67,7 @@ reports/
 tmp/
 cache/
 .coverage
-frontend/artifacts/repo-pulse/.tsbuildinfo
+*.tsbuildinfo
 
 ############################
 # Repo-Pulse analysis scratch (cloned repos for analysis)
@@ -82,12 +82,12 @@ backend/workspaces/
 ############################
 # Frontend build output
 ############################
-frontend/artifacts/repo-pulse/dist/
+**/dist/
 
 ############################
-# Vite dependency cache (rebuilt on each dev/build run)
+# Node dependencies (never commit — `pnpm install` rebuilds them; also dockerignored)
 ############################
-**/node_modules/.vite/
+node_modules/
 
 ############################
 # Secrets (never commit)
