@@ -312,6 +312,7 @@ def ai_file_insight(repo_id: int, file_id: int,
             repo_path=store.get_repo_path(repo_id),
             file_node=detail,
             risk_factors=detail.get("riskFactors", []),
+            td_contributions=detail.get("tdContributions", []),
         )
     except Exception as exc:  # API/auth/network errors from the model call
         raise HTTPException(status_code=502, detail=f"AI analysis failed: {exc}")

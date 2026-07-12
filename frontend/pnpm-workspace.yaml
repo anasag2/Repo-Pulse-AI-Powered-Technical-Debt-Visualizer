@@ -35,10 +35,8 @@ minimumReleaseAgeExclude:
   - stripe-replit-sync
 
 packages:
-  - artifacts/*
+  - app
   - lib/*
-  - lib/integrations/*
-  - scripts
 
 catalog:
   '@replit/vite-plugin-cartographer': ^0.5.1
