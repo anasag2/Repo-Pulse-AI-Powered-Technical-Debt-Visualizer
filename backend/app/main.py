@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import router as legacy_router
 from app.api.api_routes import router as api_router
 from app.api.auth_routes import router as auth_router
 
@@ -26,9 +25,6 @@ app.include_router(auth_router)
 
 # Contract API consumed by the React frontend (mounted under /api).
 app.include_router(api_router)
-
-# Legacy/manual endpoint kept for backwards compatibility.
-app.include_router(legacy_router)
 
 
 @app.get("/")

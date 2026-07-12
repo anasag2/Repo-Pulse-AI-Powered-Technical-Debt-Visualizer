@@ -86,6 +86,13 @@ def clone_remote_repository(url: str) -> tuple[bool, str, Optional[str]]:
         subprocess.run(
             [
                 "git",
+                # SECURITY: `url` is user-supplied. Disable git's dangerous transports
+                # so a crafted URL can't run commands or read local files:
+                #   ext::  -> arbitrary command execution (RCE)
+                #   file:// -> clone/read local repos on the server (info disclosure)
+                # These must come before the `clone` subcommand to take effect.
+                "-c", "protocol.ext.allow=never",
+                "-c", "protocol.file.allow=never",
                 "clone",
                 # Shallow + single branch + no tags keeps even very large repos
                 # (e.g. kubernetes) to a feasible download. Depth 300 still gives
@@ -95,6 +102,9 @@ def clone_remote_repository(url: str) -> tuple[bool, str, Optional[str]]:
                 "300",
                 "--single-branch",
                 "--no-tags",
+                # `--` ends option parsing so a URL beginning with `-` can't be
+                # smuggled in as a git flag (argument injection).
+                "--",
                 url,
                 str(target_path)
             ],
