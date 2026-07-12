@@ -46,6 +46,8 @@
     "wouter": "^3.3.5"
   },
   "dependencies": {
-    "@react-three/postprocessing": "^3.0.4"
+    "@react-three/postprocessing": "^3.0.4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   }
 }

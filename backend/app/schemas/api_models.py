@@ -196,6 +196,9 @@ class Commit(BaseModel):
 class FileDetail(FileNode):
     riskFactors: List[RiskFactor]
     recentCommits: List[Commit]
+    # A previously generated Claude analysis, cached on the file record. Present only
+    # if the user has run "Analyze with Claude" for this file since the last analysis.
+    aiInsight: Optional[AIFileInsight] = None
 
 
 class FileContent(BaseModel):

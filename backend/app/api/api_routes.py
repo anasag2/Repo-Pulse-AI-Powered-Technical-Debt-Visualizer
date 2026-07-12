@@ -275,6 +275,17 @@ def repo_chat(repo_id: int, payload: ChatInput,
                    "or set OPENROUTER_API_KEY on the backend for the free experience.",
         )
 
+    # Billing guard: the UI only offers free models, but the model id is client-supplied.
+    # When a request falls back to the app's OpenRouter key (no user-provided key), refuse
+    # any non-free model so a crafted request can't run up charges on the app account.
+    # A user who brings their own key may pick whatever they like — it's their spend.
+    if not payload.apiKey and model not in chat_service.free_model_ids():
+        raise HTTPException(
+            status_code=403,
+            detail="That model isn't on the free tier. Add your own OpenRouter key in "
+                   "chat settings to use paid models.",
+        )
+
     system = chat_service.build_repo_context(repo, files, selected)
     messages = [{"role": "system", "content": system}] + [
         {"role": m.role, "content": m.content} for m in payload.messages
@@ -299,14 +310,21 @@ def _require_ai():
     "/repositories/{repo_id}/files/{file_id}/ai-insight",
     response_model=AIFileInsight,
 )
-def ai_file_insight(repo_id: int, file_id: int,
+def ai_file_insight(repo_id: int, file_id: int, force: bool = False,
                     current: Dict = Depends(get_current_user)):
-    _require_ai()
     _owned_or_404(repo_id, current)
     detail = store.get_file(repo_id, file_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="File not found")
 
+    # Return the cached analysis if we have one (and the caller didn't ask to refresh).
+    # This survives across sessions and avoids re-spending Claude money on every view.
+    # A cached result is served even if the AI key is now absent — it's already made.
+    cached = detail.get("aiInsight")
+    if cached and not force:
+        return cached
+
+    _require_ai()  # only *generating* needs a key
     try:
         insight = ai_analysis.analyze_file(
             repo_path=store.get_repo_path(repo_id),
@@ -317,13 +335,15 @@ def ai_file_insight(repo_id: int, file_id: int,
     except Exception as exc:  # API/auth/network errors from the model call
         raise HTTPException(status_code=502, detail=f"AI analysis failed: {exc}")
 
-    return {
+    result = {
         "summary": insight.summary,
         "severity": insight.severity,
         "debtDrivers": insight.debt_drivers,
         "refactorSteps": insight.refactor_steps,
         "estimatedEffort": insight.estimated_effort,
     }
+    store.save_file_insight(repo_id, file_id, result)  # cache for next time
+    return result
 
 
 @router.post("/repositories/{repo_id}/ai-report", response_model=AIReport)

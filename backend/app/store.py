@@ -25,7 +25,7 @@ from app.db import db
 
 # Hide Mongo's _id and the private clone path from API responses.
 _API_PROJECTION = {"_id": 0, "localPath": 0}
-_FILE_LIST_PROJECTION = {"_id": 0, "riskFactors": 0, "recentCommits": 0, "tdContributions": 0}
+_FILE_LIST_PROJECTION = {"_id": 0, "riskFactors": 0, "recentCommits": 0, "tdContributions": 0, "aiInsight": 0}
 
 
 class RepoStore:
@@ -163,6 +163,15 @@ class RepoStore:
     def get_file(self, repo_id: int, file_id: int) -> Optional[Dict]:
         return self._files.find_one(
             {"repoId": repo_id, "id": file_id}, {"_id": 0}
+        )
+
+    def save_file_insight(self, repo_id: int, file_id: int, insight: Dict) -> None:
+        """Cache a Claude per-file analysis on the file record so it survives across
+        sessions and isn't recomputed (Claude costs money) on every view. Re-analysis
+        rebuilds the file docs (save_analysis deletes + reinserts), so a stale insight
+        drops automatically and regenerates on demand."""
+        self._files.update_one(
+            {"repoId": repo_id, "id": file_id}, {"$set": {"aiInsight": insight}}
         )
 
     def get_file_id_map(self, repo_id: int) -> Dict[str, int]:
