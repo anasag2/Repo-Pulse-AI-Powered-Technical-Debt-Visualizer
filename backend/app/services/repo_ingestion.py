@@ -1,12 +1,62 @@
 from pathlib import Path
+import ipaddress
 import os
+import socket
 import subprocess
 import time
 import uuid
 import shutil
 from typing import Optional
+from urllib.parse import urlsplit
 
 WORKSPACE_DIR = Path("workspaces")
+
+# Only real, remote, public git transports. ssh/git/file/ext are refused: they are
+# SSRF/RCE/local-disclosure vectors and unnecessary for the public repos we clone.
+_ALLOWED_SCHEMES = {"http", "https"}
+
+
+def _ip_is_public(ip_str: str) -> bool:
+    """True only if `ip_str` is a routable public address — not loopback, private,
+    link-local (incl. the 169.254.169.254 cloud-metadata endpoint), multicast,
+    reserved, or unspecified."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:  # unwrap ::ffff:a.b.c.d so it can't smuggle a private v4
+        ip = mapped
+    return not (
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+    )
+
+
+def validate_clone_url(url: str) -> tuple[bool, str]:
+    """SSRF guard for a user-supplied clone URL. Allow only http(s) URLs whose host
+    resolves *entirely* to public IPs; reject everything else (other transports,
+    embedded credentials, hosts that resolve to internal/loopback/metadata addresses).
+    Returns (ok, reason). Note: DNS is resolved here and again by `git` at clone time,
+    so a determined attacker could rebind between the two; blocking the common internal
+    targets is the practical goal — tighten to a host allowlist if that risk matters.
+    """
+    parts = urlsplit(url.strip())
+    if parts.scheme.lower() not in _ALLOWED_SCHEMES:
+        return False, "Only http(s) repository URLs are supported."
+    if parts.username or parts.password:
+        return False, "Repository URLs must not contain credentials."
+    host = parts.hostname
+    if not host:
+        return False, "Repository URL is missing a host."
+    try:
+        infos = socket.getaddrinfo(host, parts.port or 443, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError, ValueError):
+        return False, "Could not resolve the repository host."
+    addrs = {info[4][0] for info in infos}
+    if not addrs or any(not _ip_is_public(addr) for addr in addrs):
+        return False, "Repository host resolves to a non-public address."
+    return True, "ok"
 
 def prepare_workspace() -> None:
     WORKSPACE_DIR.mkdir(exist_ok=True)
@@ -28,6 +78,9 @@ def update_remote_repository(local_path: Optional[str], url: str) -> tuple[bool,
     """Refresh an existing shallow clone by fetching ONLY the new commits, then
     hard-resetting to the latest. If the clone is missing (e.g. evicted) or broken,
     fall back to a fresh clone. Returns (ok, message, path)."""
+    ok, reason = validate_clone_url(url)
+    if not ok:
+        return False, reason, None
     if local_path and (Path(local_path) / ".git").exists():
         try:
             subprocess.run(
@@ -77,6 +130,10 @@ def clone_remote_repository(url: str) -> tuple[bool, str, Optional[str]]:
         - A message providing details about the operation's outcome.
         - The path to the cloned repository if successful, otherwise None.
     """
+    ok, reason = validate_clone_url(url)
+    if not ok:
+        return False, reason, None
+
     prepare_workspace()
 
     repo_id = str(uuid.uuid4())
