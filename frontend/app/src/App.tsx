@@ -19,6 +19,8 @@ import { AuthProvider, useAuth } from "@/lib/auth-context";
 import { AnalysisProvider } from "@/lib/analysis-context";
 import AnalysisOverlay from "@/components/AnalysisOverlay";
 import ProfileMenu from "@/components/ProfileMenu";
+import HelpButton from "@/components/HelpButton";
+import NotificationsButton from "@/components/NotificationsButton";
 import {
   LayoutDashboard,
   GitBranch,
@@ -30,8 +32,6 @@ import {
   Plus,
   ChevronsLeft,
   ChevronsRight,
-  HelpCircle,
-  Bell,
   Loader2,
   ArrowRight,
   FileText,
@@ -293,12 +293,8 @@ function Layout({ children }: { children: React.ReactNode }) {
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-4">
           <span className="text-[13px] font-semibold text-foreground/70">{sectionLabel(location)}</span>
           <div className="flex items-center gap-0.5">
-            <button title="Help" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground">
-              <HelpCircle className="h-4 w-4" />
-            </button>
-            <button title="Notifications" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground">
-              <Bell className="h-4 w-4" />
-            </button>
+            <HelpButton />
+            <NotificationsButton />
             <div className="mx-2 h-5 w-px bg-sidebar-border" />
             <ProfileMenu />
           </div>
