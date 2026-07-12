@@ -173,9 +173,49 @@
   .risk-bg-high { background-color: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); }
 
   .grid-bg {
-    background-image: 
+    background-image:
       linear-gradient(rgba(59, 130, 246, 0.05) 1px, transparent 1px),
       linear-gradient(90deg, rgba(59, 130, 246, 0.05) 1px, transparent 1px);
     background-size: 32px 32px;
   }
 }
+
+/* Markdown rendering for assistant chat replies (see ChatDrawer). Compact and
+   theme-adaptive: backgrounds/borders derive from currentColor so they work on
+   both the light and dark bubble grounds without hard-coded colors. */
+.chat-md { font-size: 12px; line-height: 1.55; }
+.chat-md > :first-child { margin-top: 0; }
+.chat-md > :last-child { margin-bottom: 0; }
+.chat-md p { margin: 0 0 0.5em; }
+.chat-md h1, .chat-md h2, .chat-md h3, .chat-md h4 { font-size: 12.5px; font-weight: 600; margin: 0.7em 0 0.3em; }
+.chat-md ul, .chat-md ol { margin: 0 0 0.5em; padding-left: 1.2em; }
+.chat-md ul { list-style: disc; }
+.chat-md ol { list-style: decimal; }
+.chat-md li { margin: 0.15em 0; }
+.chat-md li::marker { color: color-mix(in oklab, currentColor 55%, transparent); }
+.chat-md strong { font-weight: 600; }
+.chat-md a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.chat-md code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em;
+  background: color-mix(in oklab, currentColor 13%, transparent);
+  padding: 0.05em 0.32em; border-radius: 4px;
+}
+.chat-md pre {
+  background: color-mix(in oklab, currentColor 10%, transparent);
+  padding: 0.6em 0.7em; border-radius: 7px; overflow-x: auto; margin: 0 0 0.5em;
+}
+.chat-md pre code { background: none; padding: 0; font-size: 11px; }
+.chat-md table {
+  display: block; width: max-content; max-width: 100%; overflow-x: auto;
+  border-collapse: collapse; margin: 0.2em 0 0.6em; font-size: 11px;
+}
+.chat-md th, .chat-md td {
+  border: 1px solid color-mix(in oklab, currentColor 22%, transparent);
+  padding: 4px 8px; text-align: left; white-space: nowrap;
+}
+.chat-md th { font-weight: 600; background: color-mix(in oklab, currentColor 9%, transparent); }
+.chat-md blockquote {
+  border-left: 2px solid color-mix(in oklab, currentColor 28%, transparent);
+  padding-left: 0.7em; margin: 0 0 0.5em; opacity: 0.85;
+}
+.chat-md hr { border: 0; border-top: 1px solid color-mix(in oklab, currentColor 16%, transparent); margin: 0.7em 0; }

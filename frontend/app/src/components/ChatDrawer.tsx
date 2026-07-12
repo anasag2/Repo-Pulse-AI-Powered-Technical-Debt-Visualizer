@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Send, Sparkles, KeyRound, Loader2, FileCode2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { FileNode } from "@workspace/api-client-react";
 import {
   fetchChatModels, sendChat, getByokKey, setByokKey, getSavedModel, setSavedModel,
@@ -175,14 +177,32 @@ export default function ChatDrawer({
             messages.map((m, i) => (
               <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
                 <div className={cn(
-                  "max-w-[85%] rounded-lg px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap",
-                  m.role === "user" ? "bg-emerald-500 text-white" : "bg-muted/60 text-foreground",
+                  "max-w-[85%] rounded-lg px-3 py-2 text-[12px] leading-relaxed",
+                  m.role === "user"
+                    ? "bg-emerald-500 text-white whitespace-pre-wrap"
+                    : "bg-muted/60 text-foreground",
                 )}>
-                  {/* Security: assistant text is model output grounded in untrusted repo
-                      content. Render it as escaped JSX text (as below) — never via
-                      dangerouslySetInnerHTML or a raw-HTML markdown renderer, or a crafted
-                      repo could inject XSS / exfil markup here. */}
-                  {m.content}
+                  {m.role === "user" ? (
+                    m.content
+                  ) : (
+                    // Assistant replies are Markdown. Security: react-markdown builds React
+                    // elements and does NOT render raw HTML unless rehype-raw is added (it
+                    // isn't), so injected <script>/<img onerror> in model output can't run.
+                    // We also drop images (a data-exfil vector) and force-safe link targets.
+                    <div className="chat-md">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          img: () => null,
+                          a: ({ node: _n, ...props }) => (
+                            <a {...props} target="_blank" rel="noopener noreferrer nofollow" />
+                          ),
+                        }}
+                      >
+                        {m.content}
+                      </ReactMarkdown>
+                    </div>
+                  )}
                 </div>
               </div>
             ))
