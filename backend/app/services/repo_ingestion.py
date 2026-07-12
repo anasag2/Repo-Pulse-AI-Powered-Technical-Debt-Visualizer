@@ -37,9 +37,20 @@ def validate_clone_url(url: str) -> tuple[bool, str]:
     """SSRF guard for a user-supplied clone URL. Allow only http(s) URLs whose host
     resolves *entirely* to public IPs; reject everything else (other transports,
     embedded credentials, hosts that resolve to internal/loopback/metadata addresses).
-    Returns (ok, reason). Note: DNS is resolved here and again by `git` at clone time,
-    so a determined attacker could rebind between the two; blocking the common internal
-    targets is the practical goal — tighten to a host allowlist if that risk matters.
+    Returns (ok, reason).
+
+    ACCEPTED RISK (DNS rebinding / TOCTOU): DNS is resolved here, and resolved again,
+    separately, by `git` a moment later at actual clone time. A determined attacker
+    controlling a domain's DNS could serve a public IP for this check, then rebind
+    to an internal one for git's own lookup, slipping past this guard.
+
+    Deliberately not closing this further: the alternative — a fixed allowlist of
+    known git hosts (github.com, gitlab.com, ...) — would block the legitimate use
+    case of analyzing repos on self-hosted GitLab/Gitea/etc. instances, which this
+    project intends to support. This guard still stops the common case (a URL that
+    directly targets localhost, a private range, or the cloud-metadata IP) and is a
+    conscious, documented tradeoff for the project's current scope — revisit if this
+    is ever exposed to fully untrusted, high-volume traffic rather than known users.
     """
     parts = urlsplit(url.strip())
     if parts.scheme.lower() not in _ALLOWED_SCHEMES:

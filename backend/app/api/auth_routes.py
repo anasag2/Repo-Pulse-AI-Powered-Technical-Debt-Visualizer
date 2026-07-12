@@ -31,6 +31,7 @@ from app.schemas.api_models import (
     UserPublic,
 )
 from app.services import auth, email as email_service, oauth
+from app.services.rate_limit import limiter
 from app.store import store
 
 _RESET_TTL = timedelta(hours=1)
@@ -78,7 +79,14 @@ def _public(user: Dict) -> Dict:
     }
 
 
-@router.post("/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/signup",
+    response_model=AuthResponse,
+    status_code=status.HTTP_201_CREATED,
+    # 10 signups/hour per IP — throttles bulk fake-account creation without
+    # bothering a real user who mistypes a field a couple of times.
+    dependencies=[Depends(limiter(10, 3600))],
+)
 def signup(payload: SignupInput):
     email = payload.email.lower().strip()
     try:
@@ -94,7 +102,14 @@ def signup(payload: SignupInput):
     return {"accessToken": token, "tokenType": "bearer", "user": _public(user)}
 
 
-@router.post("/login", response_model=AuthResponse)
+@router.post(
+    "/login",
+    response_model=AuthResponse,
+    # 8 attempts/5min per IP AND per email — catches both a brute force against
+    # one account (even from rotating IPs) and credential-stuffing across many
+    # accounts from one IP.
+    dependencies=[Depends(limiter(8, 300, by_body_field="email"))],
+)
 def login(payload: LoginInput):
     email = payload.email.lower().strip()
     user = store.get_user_by_email(email)
@@ -152,7 +167,13 @@ def delete_account(payload: DeleteAccountInput, current_user: Dict = Depends(get
 _GENERIC_RESET_MSG = "If an account with that email exists, a reset link has been sent."
 
 
-@router.post("/forgot-password", response_model=MessageResponse)
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    # 5/hour per IP and per email — stops both mass token generation and
+    # email-bombing one address with reset links.
+    dependencies=[Depends(limiter(5, 3600, by_body_field="email"))],
+)
 def forgot_password(payload: ForgotPasswordInput):
     """Issue a reset token and email it. Always returns the same message so the
     response can't be used to discover which emails are registered."""
