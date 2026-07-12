@@ -178,6 +178,10 @@ export default function ChatDrawer({
                   "max-w-[85%] rounded-lg px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap",
                   m.role === "user" ? "bg-emerald-500 text-white" : "bg-muted/60 text-foreground",
                 )}>
+                  {/* Security: assistant text is model output grounded in untrusted repo
+                      content. Render it as escaped JSX text (as below) — never via
+                      dangerouslySetInnerHTML or a raw-HTML markdown renderer, or a crafted
+                      repo could inject XSS / exfil markup here. */}
                   {m.content}
                 </div>
               </div>
