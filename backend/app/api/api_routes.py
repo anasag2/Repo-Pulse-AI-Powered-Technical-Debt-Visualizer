@@ -306,6 +306,24 @@ def _require_ai():
         )
 
 
+# Per-user daily cap on calls that spend the app's paid Claude key (ai-insight,
+# ai-report, AI tour enrichment). Stops one account from looping expensive calls
+# and draining the shared ANTHROPIC_API_KEY. Users' own keys (chat) are unaffected.
+_AI_DAILY_LIMIT = int(os.getenv("AI_DAILY_LIMIT", "30"))
+
+
+def _enforce_ai_quota(user: Dict) -> None:
+    """Reserve one app-key AI call against the user's daily budget, or 429.
+    Cached results never reach the model call, so they don't consume budget."""
+    allowed, _ = store.reserve_ai_call(user["id"], _AI_DAILY_LIMIT)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=(f"Daily AI limit reached ({_AI_DAILY_LIMIT} requests/day). "
+                    "Please try again tomorrow."),
+        )
+
+
 @router.post(
     "/repositories/{repo_id}/files/{file_id}/ai-insight",
     response_model=AIFileInsight,
@@ -325,6 +343,7 @@ def ai_file_insight(repo_id: int, file_id: int, force: bool = False,
         return cached
 
     _require_ai()  # only *generating* needs a key
+    _enforce_ai_quota(current)  # count this spend against the daily budget
     try:
         insight = ai_analysis.analyze_file(
             repo_path=store.get_repo_path(repo_id),
@@ -350,6 +369,7 @@ def ai_file_insight(repo_id: int, file_id: int, force: bool = False,
 def ai_repo_report(repo_id: int, current: Dict = Depends(get_current_user)):
     _require_ai()
     repo = _owned_or_404(repo_id, current)
+    _enforce_ai_quota(current)  # count this spend against the daily budget
 
     files = [f for f in (store.list_files(repo_id) or []) if not f["isDirectory"]]
     top_files = sorted(files, key=lambda f: f.get("hotspotScore", 0), reverse=True)[:8]
@@ -428,14 +448,22 @@ def _generate_tour(repo: Dict, repo_id: int, kind: str) -> Dict:
     else:
         tour = tour_service.build_code_walkthrough(repo, files)
 
+    # Enrich with Claude only if a key is set AND the owner has daily budget left
+    # (this also bounds the background prewarm). Over budget → keep the heuristic
+    # tour, same graceful path as an AI failure. Owner-less legacy repos aren't capped.
     if ai_analysis.ai_available():
-        try:
-            tour = tour_service.enrich_with_ai(
-                tour, repo, store.get_repo_path(repo_id), kind=kind
-            )
-            store.save_tour(repo_id, kind, tour)
-        except Exception:
-            pass
+        owner_id = repo.get("ownerId")
+        within_budget = True
+        if owner_id is not None:
+            within_budget, _ = store.reserve_ai_call(owner_id, _AI_DAILY_LIMIT)
+        if within_budget:
+            try:
+                tour = tour_service.enrich_with_ai(
+                    tour, repo, store.get_repo_path(repo_id), kind=kind
+                )
+                store.save_tour(repo_id, kind, tour)
+            except Exception:
+                pass
 
     return tour
 
