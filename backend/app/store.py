@@ -16,7 +16,7 @@ Collections:
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from pymongo import ASCENDING, ReturnDocument
@@ -40,6 +40,7 @@ class RepoStore:
         self._resets = db["password_resets"]
         self._delete_codes = db["delete_codes"]
         self._tours = db["tours"]
+        self._ai_usage = db["ai_usage"]
         self._ensure_indexes()
 
     def _ensure_indexes(self) -> None:
@@ -62,6 +63,11 @@ class RepoStore:
         self._resets.create_index("expiresAt", expireAfterSeconds=0)
         self._delete_codes.create_index([("userId", ASCENDING)], unique=True)
         self._delete_codes.create_index("expiresAt", expireAfterSeconds=0)
+        # One counter per user per UTC day; TTL purges old day-buckets.
+        self._ai_usage.create_index(
+            [("userId", ASCENDING), ("day", ASCENDING)], unique=True
+        )
+        self._ai_usage.create_index("expiresAt", expireAfterSeconds=0)
 
     # -- id allocation -----------------------------------------------------
     def _next_seq(self, name: str) -> int:
@@ -217,6 +223,37 @@ class RepoStore:
              "_cachedAt": datetime.now(timezone.utc)},
             upsert=True,
         )
+
+    # -- AI usage quota (protects the app's paid Claude key) ---------------
+    def reserve_ai_call(self, user_id: int, daily_limit: int) -> tuple[bool, int]:
+        """Atomically reserve one AI call against the user's daily budget.
+
+        Returns ``(allowed, used)``. Guards the endpoints that spend the app's
+        ANTHROPIC_API_KEY so a single account can't loop expensive calls and run
+        up the bill. Only calls that actually reach the model land here (cached
+        results don't), so the budget tracks real spend. A TTL index purges old
+        day-buckets automatically.
+        """
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        doc = self._ai_usage.find_one_and_update(
+            {"userId": user_id, "day": day},
+            {
+                "$inc": {"count": 1},
+                "$setOnInsert": {
+                    "expiresAt": datetime.now(timezone.utc) + timedelta(days=2)
+                },
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        if doc["count"] > daily_limit:
+            # Over budget: undo the reservation so the stored count reflects real,
+            # allowed usage and a rejected attempt doesn't erode the daily cap.
+            self._ai_usage.update_one(
+                {"userId": user_id, "day": day}, {"$inc": {"count": -1}}
+            )
+            return False, daily_limit
+        return True, doc["count"]
 
     # -- users -------------------------------------------------------------
     def create_user(

@@ -24,6 +24,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Per-user daily cap on paid Claude calls (insight/report/tour). Default 30.
+      AI_DAILY_LIMIT: ${AI_DAILY_LIMIT:-30}
       # Optional: override the AI model (defaults to claude-sonnet-4-6 in code).
       REPO_PULSE_AI_MODEL: ${REPO_PULSE_AI_MODEL:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
