@@ -42,6 +42,7 @@ import {
   FileCode2,
   MessageSquare,
   Camera,
+  ListChecks,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1123,6 +1124,17 @@ export default function RepositoryView() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Jump to this repo's ranked findings + AI analysis */}
+          <Link href={`/findings?repo=${repoId}`}>
+            <button
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/20"
+              data-testid="link-view-findings"
+              title="See ranked findings and AI analysis for this repository"
+            >
+              <ListChecks className="h-3.5 w-3.5" /> Findings
+            </button>
+          </Link>
 
           {/* Risk legend */}
           <div className="ml-auto flex items-center gap-2 shrink-0">

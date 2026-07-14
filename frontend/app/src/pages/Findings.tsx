@@ -1,16 +1,16 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Flame, Boxes, Bug, Link2, Copy, Braces, AlertTriangle,
-  ArrowLeft, ArrowRight, Loader2, ShieldCheck,
+  ArrowLeft, Loader2, ShieldCheck, Sparkles,
 } from "lucide-react";
 import { useListRepositories } from "@workspace/api-client-react";
 import { cn } from "@/lib/utils";
 import { getToken } from "@/lib/auth";
-import { pageEnter, stagger, rise } from "@/lib/motion";
+import { pageEnter } from "@/lib/motion";
 import RepoCardGrid from "@/components/RepoCardGrid";
+import FindingAiPanel, { type AiInsight } from "@/components/FindingAiPanel";
 
 interface FindingFactor { label: string; detail: string }
 interface Finding {
@@ -51,48 +51,36 @@ const SEV_BORDER: Record<string, string> = {
   low: "border-l-slate-500",
 };
 
-function FindingCard({ repoId, f }: { repoId: number; f: Finding }) {
+// One row in the compressed left rail. Highlights when it's the selected finding.
+function CompactFindingRow({ f, selected, onClick }: {
+  f: Finding; selected: boolean; onClick: () => void;
+}) {
   const meta = CATEGORY[f.category] ?? CATEGORY["Elevated technical debt"];
   const Icon = meta.icon;
   return (
-    <motion.div
-      variants={rise}
-      className={cn("rounded-xl border border-l-4 border-border bg-card/40 p-4", SEV_BORDER[f.severity] ?? SEV_BORDER.low)}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <Icon className={cn("h-4 w-4 shrink-0", meta.color)} />
-            <span className="text-sm font-semibold text-foreground">{f.category}</span>
-            <span className="rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{f.severity}</span>
-          </div>
-          <div className="mt-1 truncate font-mono text-xs text-muted-foreground" title={f.path}>{f.path}</div>
-        </div>
-        <div className="shrink-0 text-right">
-          <div className="text-lg font-bold text-foreground">{f.tdScore.toFixed(2)}</div>
-          <div className="text-[10px] text-muted-foreground">TD score</div>
-        </div>
-      </div>
-
-      <p className="mt-2.5 text-sm leading-relaxed text-foreground/85">{f.recommendation}</p>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {f.factors.map((x) => (
-          <span key={x.label} className="rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
-            <span className="text-foreground/80">{x.label}</span> · {x.detail}
-          </span>
-        ))}
-      </div>
-
-      {f.relatedPaths.length > 0 && (
-        <div className="mt-2 text-[11px] text-muted-foreground">
-          Changes with: {f.relatedPaths.map((p, i) => (
-            <span key={p}>{i > 0 && ", "}<span className="font-mono text-foreground/70">{p}</span></span>
-          ))}
-        </div>
+    <button
+      onClick={onClick}
+      data-testid="finding-row"
+      aria-current={selected}
+      className={cn(
+        "w-full rounded-lg border border-l-4 border-border px-3 py-2 text-left transition-colors",
+        SEV_BORDER[f.severity] ?? SEV_BORDER.low,
+        selected ? "bg-emerald-500/10 ring-1 ring-emerald-500/50" : "bg-card/40 hover:bg-muted/40",
       )}
-
-    </motion.div>
+    >
+      <div className="flex items-center gap-2">
+        <Icon className={cn("h-3.5 w-3.5 shrink-0", meta.color)} />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground" title={f.path}>
+          {f.name}
+        </span>
+        <span className="shrink-0 text-[13px] font-bold tabular-nums text-foreground">
+          {f.tdScore.toFixed(2)}
+        </span>
+      </div>
+      <div className="mt-0.5 truncate pl-[22px] font-mono text-[10px] text-muted-foreground" title={f.path}>
+        {f.path}
+      </div>
+    </button>
   );
 }
 
@@ -105,63 +93,110 @@ export default function Findings() {
   });
   const repo = list.find((r) => r.id === picked) ?? null;
   const { data: findings, isLoading, isError } = useFindings(picked);
-  const highCount = (findings ?? []).filter((f) => f.severity === "high").length;
+  const findingList = findings ?? [];
+  const highCount = findingList.filter((f) => f.severity === "high").length;
+
+  // Master-detail selection. A session-scoped cache of loaded insights means
+  // re-selecting a finding shows instantly (and doesn't re-spend on Claude).
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const insightCache = useRef<Map<number, AiInsight>>(new Map());
+  useEffect(() => { setSelectedId(null); }, [picked]);
+  const selected = findingList.find((f) => f.fileId === selectedId) ?? null;
 
   return (
-    <motion.div {...pageEnter} className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-4xl p-6">
-        <h1 className="text-xl font-bold text-foreground">Findings</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          The files carrying the most technical debt — why they're flagged, and what to do about them.
-        </p>
-
-        {list.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-dashed border-border p-12 text-center">
-            <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-muted-foreground opacity-40" />
-            <p className="text-sm text-foreground/80">Analyze a repository first to see its findings.</p>
-          </div>
-        ) : !repo ? (
-          <div className="mt-5">
-            <RepoCardGrid repos={list} actionLabel="See findings" onPick={setPicked} />
-          </div>
-        ) : (
-          <div className="mt-5">
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <button
-                onClick={() => setPicked(null)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/50 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" /> Repositories
-              </button>
-              <span className="text-sm font-semibold text-foreground">{repo.name}</span>
-              {findings && findings.length > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {findings.length} findings{highCount > 0 && ` · ${highCount} high`}
-                </span>
-              )}
+    <motion.div {...pageEnter} className="h-full">
+      {list.length === 0 ? (
+        <div className="h-full overflow-y-auto">
+          <div className="mx-auto max-w-4xl p-6">
+            <h1 className="text-xl font-bold text-foreground">Findings</h1>
+            <div className="mt-6 rounded-xl border border-dashed border-border p-12 text-center">
+              <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-muted-foreground opacity-40" />
+              <p className="text-sm text-foreground/80">Analyze a repository first to see its findings.</p>
             </div>
-
-            {isLoading ? (
-              <div className="flex h-72 items-center justify-center text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin" /><span className="ml-2 text-sm">Analyzing…</span>
-              </div>
-            ) : isError ? (
-              <div className="flex h-72 items-center justify-center text-center text-sm text-muted-foreground">
-                Couldn't load findings. Try Refresh on the repo.
-              </div>
-            ) : (findings ?? []).length === 0 ? (
-              <div className="flex h-72 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
-                <ShieldCheck className="h-7 w-7 text-emerald-400/70" />
-                No significant findings — this repository looks healthy.
-              </div>
-            ) : (
-              <motion.div variants={stagger} initial="hidden" animate="show" className="space-y-3">
-                {(findings ?? []).map((f) => <FindingCard key={f.fileId} repoId={repo.id} f={f} />)}
-              </motion.div>
+          </div>
+        </div>
+      ) : !repo ? (
+        <div className="h-full overflow-y-auto">
+          <div className="mx-auto max-w-4xl p-6">
+            <h1 className="text-xl font-bold text-foreground">Findings</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              The files carrying the most technical debt — why they're flagged, and what to do about them.
+            </p>
+            <div className="mt-5">
+              <RepoCardGrid repos={list} actionLabel="See findings" onPick={setPicked} />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-full flex-col p-6">
+          {/* Header row */}
+          <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+            <button
+              onClick={() => setPicked(null)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card/50 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Repositories
+            </button>
+            <span className="text-sm font-semibold text-foreground">{repo.name}</span>
+            {findingList.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {findingList.length} findings{highCount > 0 && ` · ${highCount} high`}
+              </span>
             )}
           </div>
-        )}
-      </div>
+
+          {isLoading ? (
+            <div className="flex flex-1 items-center justify-center text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" /><span className="ml-2 text-sm">Analyzing…</span>
+            </div>
+          ) : isError ? (
+            <div className="flex flex-1 items-center justify-center text-center text-sm text-muted-foreground">
+              Couldn't load findings. Try Refresh on the repo.
+            </div>
+          ) : findingList.length === 0 ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+              <ShieldCheck className="h-7 w-7 text-emerald-400/70" />
+              No significant findings — this repository looks healthy.
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 gap-4">
+              {/* Compressed ranked list */}
+              <div className="w-64 shrink-0 space-y-1.5 overflow-y-auto pr-1 lg:w-72">
+                {findingList.map((f) => (
+                  <CompactFindingRow
+                    key={f.fileId}
+                    f={f}
+                    selected={f.fileId === selectedId}
+                    onClick={() => setSelectedId(f.fileId)}
+                  />
+                ))}
+              </div>
+
+              {/* AI analysis detail */}
+              <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card/40">
+                {selected ? (
+                  <FindingAiPanel
+                    key={selected.fileId}
+                    repoId={repo.id}
+                    fileId={selected.fileId}
+                    filePath={selected.path}
+                    repoUrl={repo.url}
+                    cached={insightCache.current.get(selected.fileId) ?? null}
+                    onLoaded={(fid, ins) => insightCache.current.set(fid, ins)}
+                  />
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+                    <Sparkles className="h-8 w-8 text-emerald-400/40" />
+                    <p className="max-w-xs text-sm text-muted-foreground">
+                      Select a finding on the left to generate its AI debt analysis and refactor plan.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
